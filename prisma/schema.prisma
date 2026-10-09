@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["novelai_tags"]
+}
+
+model TagCategory {
+  id        String     @id
+  sourceKey String     @unique
+  nameZh    String
+  nameEn    String
+  sortOrder Int
+  groups    TagGroup[]
+  tags      Tag[]
+
+  @@schema("novelai_tags")
+}
+
+model TagGroup {
+  id         String      @id
+  categoryId String
+  nameZh     String
+  sortOrder  Int
+  category   TagCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  tags       Tag[]
+
+  @@unique([categoryId, nameZh])
+  @@index([categoryId, sortOrder])
+  @@schema("novelai_tags")
+}
+
+model Tag {
+  id         String      @id
+  categoryId String
+  groupId    String
+  zh         String
+  en         String
+  rawZh      String
+  rawEn      String
+  aliases    String[]    @default([])
+  note       String?
+  imageUrl   String?
+  sortOrder  Int
+  popular    Boolean     @default(false)
+  category   TagCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  group      TagGroup    @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@unique([groupId, rawZh])
+  @@index([categoryId, sortOrder])
+  @@index([groupId, sortOrder])
+  @@index([popular, sortOrder])
+  @@index([en])
+  @@schema("novelai_tags")
+}
+
+model CatalogImport {
+  id            String   @id
+  sourceFile    String
+  sourceUrl     String
+  sourceHash    String
+  categoryCount Int
+  groupCount    Int
+  tagCount      Int
+  imageCount    Int
+  importedAt    DateTime @default(now())
+  catalogGzip   Bytes?
+
+  @@schema("novelai_tags")
+}
