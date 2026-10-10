@@ -26,6 +26,7 @@ function render(
       disabled={disabled}
       onSelect={() => {}}
       onFavorite={() => {}}
+      onCopy={() => {}}
     />,
   );
 }
@@ -56,14 +57,14 @@ describe("library-composed tag cards", () => {
       expect(html).not.toContain("tag-card-hit-area");
     }
   });
-  test("disabled state takes precedence and disables both interactions", () => {
+  test("disabled state takes precedence and disables selection, copy and favorite", () => {
     const html = render(true, true, tag, true);
     expect(html).toContain('data-disabled="true"');
     expect(cardClass(html)).not.toContain("animal-card-hoverable-");
     expect(cardClass(html)).not.toContain("animal-card-app-teal-");
     expect(html).toContain('aria-disabled="true"');
     expect(html).toContain('tabindex="-1"');
-    expect(html.match(/ disabled=""/g)?.length).toBe(1);
+    expect(html.match(/ disabled=""/g)?.length).toBe(2);
     expect(html).toContain("不可选择");
   });
   test("uses the transparent library link-button variant for favorites", () => {
@@ -77,7 +78,7 @@ describe("library-composed tag cards", () => {
     expect(initial).toContain("收藏 long hair");
     expect(favorite).toContain("取消收藏 long hair");
   });
-  test("favorite is a sibling, never nested in the selectable card", () => {
+  test("favorite and copy are siblings, never nested in the selectable card", () => {
     const html = render();
     expect(html).toContain("tag-card-favorite-wrap");
     const interactiveCard = html.match(
@@ -86,6 +87,9 @@ describe("library-composed tag cards", () => {
     expect(interactiveCard).toBeTruthy();
     expect(interactiveCard).not.toContain("<button");
     expect(interactiveCard).not.toContain("tag-card-favorite");
+    expect(interactiveCard).not.toContain("tag-card-copy-button");
+    expect(html).toContain('aria-label="复制 long hair"');
+    expect(html).toMatch(/class="[^"]*animal-btn-link-[^"]*tag-card-copy-button/);
   });
   test("shows the Chinese label and complete English tooltip", () => {
     const html = render();
@@ -127,13 +131,41 @@ describe("library-composed tag cards", () => {
     expect(html).toContain("Anmi画风参考");
     expect(html).not.toContain("_next/image");
   });
-  test("preserves an explicit image-missing state and source note", () => {
+  test("artists without local images fall back to Danbooru and preserve source notes", () => {
     const html = render(false, false, {
       ...tag,
       category: "illustrator",
       note: "来自源文件的备注",
     });
-    expect(html).toContain("暂无本地参考图");
+    expect(html).toContain("正在加载参考图");
+    expect(html).toContain("Danbooru 例图");
     expect(html).toContain("来自源文件的备注");
+  });
+  test("character cards reserve a Danbooru image surface without fetching during SSR", () => {
+    const html = render(false, false, {
+      ...tag,
+      category: "characters",
+      name: "klee_(genshin_impact)",
+      translation: "可莉",
+    });
+    expect(html).toContain("tag-card-media");
+    expect(html).toContain("正在加载参考图");
+    expect(html).not.toContain("klee_(genshin_impact).jpg");
+  });
+  test("other discovery categories reserve lazily loaded Danbooru examples", () => {
+    for (const category of ["body", "environment", "clothes", "style"] as const) {
+      const html = render(false, false, { ...tag, category });
+      expect(html).toContain("tag-card-media");
+      expect(html).toContain("正在加载参考图");
+      expect(html).toContain("Danbooru 例图 · 仅供参考");
+      expect(html).not.toContain("<img");
+    }
+  });
+  test("local artist examples are explicitly distinguished from Danbooru", () => {
+    const html = render(false, false, {
+      ...tag, category: "illustrator", imageUrl: "/images/artist/Anmi_anmi.webp",
+    });
+    expect(html).toContain("本地画风参考");
+    expect(html).not.toContain("Danbooru 例图");
   });
 });

@@ -2,8 +2,9 @@
 
 import { useId } from "react";
 import { Button, Card, Image } from "animal-island-ui";
-import { ImageIcon, StarIcon } from "naive-icons";
+import { CopyIcon, ImageIcon, StarIcon } from "naive-icons";
 import type { NovelTag } from "../lib/tag-catalog";
+import { useTagImage } from "../lib/use-tag-image";
 
 export type TagCardProps = {
   tag: NovelTag;
@@ -12,6 +13,7 @@ export type TagCardProps = {
   disabled?: boolean;
   onSelect: () => void;
   onFavorite: () => void;
+  onCopy: () => void;
 };
 
 /** Library-owned surfaces and controls; custom CSS handles composition only. */
@@ -22,11 +24,17 @@ export default function TagCard({
   disabled = false,
   onSelect,
   onFavorite,
+  onCopy,
 }: TagCardProps) {
   const titleId = useId();
   const translation = tag.translation.trim();
   const title = translation || tag.name;
   const favoriteLabel = `${favorite ? "取消收藏" : "收藏"} ${tag.name}`;
+  const localImage = tag.category === "illustrator" ? tag.imageUrl : undefined;
+  const { hostRef, imageUrl, loading, error } = useTagImage(
+    tag.name,
+    !localImage && !disabled,
+  );
   return (
     <article
       className="tag-tile"
@@ -57,12 +65,23 @@ export default function TagCard({
           }
         }}
       >
-        {tag.category === "illustrator" ? (
-          <div className="tag-card-media">
-            {tag.imageUrl ? (
+        <div className="tag-card-example">
+          <div ref={hostRef} className="tag-card-media">
+            {localImage ? (
               <Image
-                src={tag.imageUrl}
+                src={localImage}
                 alt={`${title}画风参考`}
+                variant="bordered"
+                color="default"
+                width="100%"
+                height={172}
+                lazy
+                preview={false}
+              />
+            ) : imageUrl ? (
+              <Image
+                src={imageUrl}
+                alt={`${title} Danbooru 例图，仅供参考`}
                 variant="bordered"
                 color="default"
                 width="100%"
@@ -73,11 +92,20 @@ export default function TagCard({
             ) : (
               <div className="tag-card-media-empty">
                 <ImageIcon size={30} color="currentColor" aria-hidden="true" />
-                <span>暂无本地参考图</span>
+                <span>
+                  {loading
+                    ? "正在加载参考图…"
+                    : error
+                      ? "参考图请求失败"
+                      : "暂无 Danbooru 参考图"}
+                </span>
               </div>
             )}
           </div>
-        ) : null}
+          <p className="tag-card-image-source">
+            {localImage ? "本地画风参考" : "Danbooru 例图 · 仅供参考"}
+          </p>
+        </div>
         <header className="tag-card-copy">
           <h3 id={titleId} className="tag-card-title" title={title}>
             {title}
@@ -95,6 +123,19 @@ export default function TagCard({
         </header>
       </Card>
       <div className="tag-card-favorite-wrap">
+        <Button
+          type="link"
+          size="small"
+          className="tag-card-copy-button"
+          disabled={disabled}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (!disabled) onCopy();
+          }}
+          aria-label={`复制 ${tag.name}`}
+          title={`复制 ${tag.name}`}
+          icon={<CopyIcon size={17} color="currentColor" aria-hidden="true" />}
+        />
         <Button
           type="link"
           size="small"

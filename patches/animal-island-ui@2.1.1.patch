@@ -1,0 +1,50 @@
+diff --git a/dist/cjs/_virtual/client.cjs b/dist/cjs/_virtual/client.cjs
+index 64f9b0de5efd924c65e6684af4fb23c11bbf9900..94262c54b68f0590b5305fa321bcb76c06c9a7e7 100644
+--- a/dist/cjs/_virtual/client.cjs
++++ b/dist/cjs/_virtual/client.cjs
+@@ -1 +1 @@
+-"use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("../node_modules/react-dom/client.cjs");var t=e.__require();exports.clientExports=t;
++"use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const e=require("react-dom/client");exports.clientExports=e;
+diff --git a/dist/cjs/components/Image/Image.cjs b/dist/cjs/components/Image/Image.cjs
+index e05f7e531bc0e6851cc1c7726dcae88f0ffdfc14..7f963400e14b5cc187368549bda17c0a89070251 100644
+--- a/dist/cjs/components/Image/Image.cjs
++++ b/dist/cjs/components/Image/Image.cjs
+@@ -1 +1 @@
+-"use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const a=require("react/jsx-runtime"),t=require("react"),z=require("react-dom"),C=require("classnames"),B=require("../../node_modules/naive-icons/dist/index.cjs"),e=require("./image.module.less.cjs"),I=({src:d,alt:l="",width:p,height:g,color:r="white",variant:u="default",lazy:R=!1,preview:x=!0,stampYear:y,className:j,style:b,onLoad:h,onError:k,...S})=>{const[P,v]=t.useState(!1),[$,i]=t.useState(!1),[n,c]=t.useState(!1),o=t.useRef(null),f=t.useRef(null);t.useEffect(()=>{v(!1),i(!1)},[d]);const L=t.useCallback(s=>{i(!0),h?.(s)},[h]),F=t.useCallback(s=>{v(!0),i(!0),k?.(s)},[k]);t.useEffect(()=>{if(!n)return;o.current?.focus();const s=m=>{m.key==="Escape"?c(!1):m.key==="Tab"&&(m.preventDefault(),o.current?.focus())};return document.addEventListener("keydown",s),()=>document.removeEventListener("keydown",s)},[n]),t.useEffect(()=>{n||(f.current?.focus(),f.current=null)},[n]);const O=()=>{f.current=document.activeElement,c(!0)};if(P)return a.jsxs("span",{className:C(e.default.image,r!=="white"&&e.default[`image-${r}`],e.default.error,j),style:{width:p,height:g,...b},role:"img","aria-label":l||"图片加载失败",children:[a.jsx(B.ImageIcon,{size:32,"aria-hidden":"true"}),a.jsx("span",{children:"图片加载失败"})]});const N=C(e.default.image,u==="default"&&e.default["variant-default"],u==="stamp"&&e.default["variant-stamp"],u==="bordered"&&r!=="white"&&e.default[`image-${r}`],$&&e.default.loaded,x&&e.default.preview,j),E={width:p,height:g,...b},w=a.jsx("img",{src:d,alt:l,loading:R?"lazy":void 0,className:e.default.img,onLoad:L,onError:F,...S}),q=u==="stamp"&&y&&a.jsx("span",{className:e.default["stamp-year"],children:y});return x?a.jsxs(a.Fragment,{children:[a.jsxs("button",{type:"button",className:N,style:E,onClick:O,children:[w,q]}),z.createPortal(n?a.jsx("div",{className:e.default.mask,onClick:()=>c(!1),children:a.jsxs("div",{className:e.default.dialog,role:"dialog","aria-modal":"true","aria-label":l?`查看图片：${l}`:"图片预览",onClick:s=>s.stopPropagation(),children:[a.jsx("button",{type:"button",ref:o,className:e.default.closeBtn,"aria-label":"关闭预览",onClick:()=>c(!1),children:a.jsx("span",{className:e.default.closeMark})}),a.jsx("img",{src:d,alt:l,className:e.default.previewImg})]})}):null,document.body)]}):a.jsxs("span",{className:N,style:E,children:[w,q]})};I.displayName="Image";exports.Image=I;
++"use strict";Object.defineProperty(exports,Symbol.toStringTag,{value:"Module"});const a=require("react/jsx-runtime"),t=require("react"),z=require("react-dom"),C=require("classnames"),B=require("../../node_modules/naive-icons/dist/index.cjs"),e=require("./image.module.less.cjs"),I=({src:d,alt:l="",width:p,height:g,color:r="white",variant:u="default",lazy:R=!1,preview:x=!0,stampYear:y,className:j,style:b,onLoad:h,onError:k,...S})=>{const[P,v]=t.useState(!1),[$,i]=t.useState(!1),[n,c]=t.useState(!1),o=t.useRef(null),f=t.useRef(null),imageRef=t.useRef(null);t.useEffect(()=>{const image=imageRef.current;v(Boolean(image?.complete&&image.naturalWidth===0)),i(Boolean(image?.complete))},[d]);const L=t.useCallback(s=>{i(!0),h?.(s)},[h]),F=t.useCallback(s=>{v(!0),i(!0),k?.(s)},[k]);t.useEffect(()=>{if(!n)return;o.current?.focus();const s=m=>{m.key==="Escape"?c(!1):m.key==="Tab"&&(m.preventDefault(),o.current?.focus())};return document.addEventListener("keydown",s),()=>document.removeEventListener("keydown",s)},[n]),t.useEffect(()=>{n||(f.current?.focus(),f.current=null)},[n]);const O=()=>{f.current=document.activeElement,c(!0)};if(P)return a.jsxs("span",{className:C(e.default.image,r!=="white"&&e.default[`image-${r}`],e.default.error,j),style:{width:p,height:g,...b},role:"img","aria-label":l||"图片加载失败",children:[a.jsx(B.ImageIcon,{size:32,"aria-hidden":"true"}),a.jsx("span",{children:"图片加载失败"})]});const N=C(e.default.image,u==="default"&&e.default["variant-default"],u==="stamp"&&e.default["variant-stamp"],u==="bordered"&&r!=="white"&&e.default[`image-${r}`],$&&e.default.loaded,x&&e.default.preview,j),E={width:p,height:g,...b},w=a.jsx("img",{src:d,ref:imageRef,alt:l,loading:R?"lazy":void 0,className:e.default.img,onLoad:L,onError:F,...S}),q=u==="stamp"&&y&&a.jsx("span",{className:e.default["stamp-year"],children:y});return x?a.jsxs(a.Fragment,{children:[a.jsxs("button",{type:"button",className:N,style:E,onClick:O,children:[w,q]}),z.createPortal(n?a.jsx("div",{className:e.default.mask,onClick:()=>c(!1),children:a.jsxs("div",{className:e.default.dialog,role:"dialog","aria-modal":"true","aria-label":l?`查看图片：${l}`:"图片预览",onClick:s=>s.stopPropagation(),children:[a.jsx("button",{type:"button",ref:o,className:e.default.closeBtn,"aria-label":"关闭预览",onClick:()=>c(!1),children:a.jsx("span",{className:e.default.closeMark})}),a.jsx("img",{src:d,alt:l,className:e.default.previewImg})]})}):null,document.body)]}):a.jsxs("span",{className:N,style:E,children:[w,q]})};I.displayName="Image";exports.Image=I;
+diff --git a/dist/es/_virtual/client.js b/dist/es/_virtual/client.js
+index 36a6f29e6dc6e291c5d42b98005537df488a7b5f..98e947f43f3815fd63b4a03ad349bfb1d7b9dc69 100644
+--- a/dist/es/_virtual/client.js
++++ b/dist/es/_virtual/client.js
+@@ -1,5 +1,4 @@
+-import { __require as r } from "../node_modules/react-dom/client.js";
+-var i = r();
++import * as i from "react-dom/client";
+ export {
+   i as c
+ };
+diff --git a/dist/es/components/Image/Image.js b/dist/es/components/Image/Image.js
+index 32a099c7c9e532958e035d4d70409354f10d7e0f..4ca895eb0276128aa8180e39b3420a8307d0dbd3 100644
+--- a/dist/es/components/Image/Image.js
++++ b/dist/es/components/Image/Image.js
+@@ -20,9 +20,10 @@ const A = ({
+   onError: E,
+   ...z
+ }) => {
+-  const [B, C] = p(!1), [O, m] = p(!1), [n, i] = p(!1), d = F(null), u = F(null);
++  const [B, C] = p(!1), [O, m] = p(!1), [n, i] = p(!1), d = F(null), u = F(null), imageRef = F(null);
+   g(() => {
+-    C(!1), m(!1);
++    const image = imageRef.current;
++    C(Boolean(image?.complete && image.naturalWidth === 0)), m(Boolean(image?.complete));
+   }, [c]);
+   const S = R(
+     (a) => {
+@@ -79,6 +80,7 @@ const A = ({
+     "img",
+     {
+       src: c,
++      ref: imageRef,
+       alt: s,
+       loading: j ? "lazy" : void 0,
+       className: e.img,

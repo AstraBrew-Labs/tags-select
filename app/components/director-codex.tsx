@@ -1,13 +1,14 @@
 "use client";
 
 import { useDeferredValue, useMemo, useState } from "react";
-import { Button, Card, Input, Pagination, Tag } from "animal-island-ui";
+import { Button, Card, Input, Notification, Pagination, Tag } from "animal-island-ui";
 import { BookIcon, CopyIcon, ExternalLinkIcon, HelpCircleIcon, SearchIcon } from "naive-icons";
 import {
   codexSourceLink, createCodexIndex, DIRECTOR_CODEX_URL,
   type CodexCatalog, type CodexEntry,
 } from "../lib/director-codex";
 import { useDirectorCodex } from "../lib/use-director-codex";
+import { useNotification } from "../lib/use-notification";
 
 const icon = { color: "currentColor", size: 17, "aria-hidden": true } as const;
 const PAGE_SIZE = 12;
@@ -98,7 +99,7 @@ export function DirectorCodexPanel({
 }: ViewProps & {
   data: CodexCatalog | null; loading: boolean; error: string | null; retry: () => void;
 }) {
-  const [notice, setNotice] = useState("");
+  useNotification(loading ? null : error ?? (!data ? "法典数据尚未导入。" : null));
   const deferredQuery = useDeferredValue(view.query);
   const index = useMemo(() => data ? createCodexIndex(data) : null, [data]);
   const filtered = useMemo(
@@ -112,9 +113,9 @@ export function DirectorCodexPanel({
   async function copy(text: string, title: string) {
     try {
       await navigator.clipboard.writeText(text);
-      setNotice(`已复制「${title}」的原始标签组。`);
+      Notification.success(`已复制「${title}」的原始标签组。`);
     } catch {
-      setNotice("无法访问剪贴板，请选中卡片内的提示词手动复制。");
+      Notification.error("无法访问剪贴板，请选中卡片内的提示词手动复制。");
     }
   }
   return (
@@ -145,9 +146,9 @@ export function DirectorCodexPanel({
           <p>首次加载后缓存一周，下次优先读取浏览器缓存。</p>
         </div>
       ) : error || !data ? (
-        <div className="catalog-status" role="alert">
+        <div className="catalog-status">
           <HelpCircleIcon {...icon} size={34} /><h3>法典暂不可用</h3>
-          <p>{error ?? "法典数据尚未导入。"}</p><Button onClick={retry}>重新加载法典</Button>
+          <Button onClick={retry}>重新加载法典</Button>
         </div>
       ) : (
         <div className="codex-workspace">
@@ -181,7 +182,6 @@ export function DirectorCodexPanel({
                 <Button type="text" size="small" onClick={() => onViewChange(INITIAL_CODEX_VIEW)}>重置筛选</Button>
               ) : null}
             </div>
-            {notice ? <p className="codex-notice" role="status">{notice}</p> : null}
             <div className="codex-results" aria-label="法典标签组" aria-busy={deferredQuery !== view.query}>
               {filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((entry) => (
                 <CodexEntryCard key={entry.id} entry={entry}

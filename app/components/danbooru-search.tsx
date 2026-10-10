@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Button, Card, Collapse, Switch, Tag, Title } from "animal-island-ui";
+import { Button, Card, Collapse, Notification, Switch, Tag, Title } from "animal-island-ui";
 import {
   CopyIcon,
   ExternalLinkIcon,
@@ -39,6 +39,7 @@ import {
   type DanbooruSelection,
 } from "../lib/danbooru-selection";
 import { preparePromptSearch, preprocessPromptQuery, PROMPT_SEARCH_MAX_LENGTH } from "../lib/prompt-preprocessing";
+import { useNotification } from "../lib/use-notification";
 
 const icon = { color: "currentColor", size: 18, "aria-hidden": true } as const;
 const categoryNames: Record<string, string> = {
@@ -201,7 +202,7 @@ function PanelState({
   action,
 }: {
   title: string;
-  children: ReactNode;
+  children?: ReactNode;
   error?: boolean;
   loading?: boolean;
   action?: ReactNode;
@@ -209,11 +210,11 @@ function PanelState({
   return (
     <div
       className="danbooru-panel-state"
-      role={error ? "alert" : loading ? "status" : undefined}
+      role={loading ? "status" : undefined}
     >
       {error ? <HelpCircleIcon {...icon} size={28} /> : <TagIcon {...icon} size={28} />}
       <h4>{title}</h4>
-      <p>{children}</p>
+      {children ? <p>{children}</p> : null}
       {action}
     </div>
   );
@@ -393,7 +394,7 @@ export function DanbooruRecommendations({
       title="推荐服务暂时不可用"
       error
       action={onRetry ? <Button size="small" onClick={onRetry}>重试推荐</Button> : undefined}
-    >{error}</PanelState>
+    />
   ) : (
     <PanelState title="等待推荐结果">根据当前选择查找相关数据。</PanelState>
   );
@@ -482,7 +483,6 @@ export default function DanbooruSearch() {
   const [result, setResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [selectedItems, setSelectedItems] = useState<readonly DanbooruSelection[]>([]);
   const [recommendationResult, setRecommendationResult] =
     useState<RecommendationResult | null>(null);
@@ -502,7 +502,7 @@ export default function DanbooruSearch() {
     try {
       input = { ...input, query: preparePromptSearch(input.query).query };
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "提示词格式无效，请检查输入。");
+      Notification.error(error instanceof Error ? error.message : "提示词格式无效，请检查输入。");
       return;
     }
     // Historical adult searches and retries must use the same confirmation gate
@@ -523,19 +523,21 @@ export default function DanbooruSearch() {
     setSubmitted(input);
     setLoading(true);
     setError("");
-    setNotice("");
     // History replay may restore a different safety setting. Apply that setting
     // to the independent selection without discarding safe cross-query choices.
     if (input.show_nsfw !== adultEnabled) applyNsfwSetting(input.show_nsfw);
     if (!danbooruHistory.record(input)) {
-      setNotice("浏览器不允许保存历史记录，本次记录仅保留在当前页面，刷新后可能丢失。");
+      Notification.warning("浏览器不允许保存历史记录，本次记录仅保留在当前页面，刷新后可能丢失。");
     }
     setResult(null);
     try {
       const next = await danbooruLoader.load(input);
       if (requestId.current === id) setResult(next);
     } catch {
-      if (requestId.current === id) setError(DANBOORU_SERVICE_ERROR);
+      if (requestId.current === id) {
+        setError(DANBOORU_SERVICE_ERROR);
+        Notification.error(DANBOORU_SERVICE_ERROR);
+      }
     } finally {
       if (requestId.current === id) setLoading(false);
     }
@@ -543,9 +545,9 @@ export default function DanbooruSearch() {
   async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      setNotice("英文标签已复制。");
+      Notification.success("英文标签已复制。");
     } catch {
-      setNotice("无法访问剪贴板，请选中标签文字手动复制。");
+      Notification.error("无法访问剪贴板，请选中标签文字手动复制。");
     }
   }
 
@@ -585,8 +587,10 @@ export default function DanbooruSearch() {
           setRecommendationResult(next);
       })
       .catch(() => {
-        if (recommendationRequestId.current === id)
+        if (recommendationRequestId.current === id) {
           setRecommendationError("推荐服务暂时不可用，请稍后重试。");
+          Notification.error("推荐服务暂时不可用，请稍后重试。");
+        }
       })
       .finally(() => {
         if (recommendationRequestId.current === id)
@@ -603,7 +607,7 @@ export default function DanbooruSearch() {
     if (!selection) return;
     const nextItems = toggleDanbooruSelection(selectedItems, selection);
     if (nextItems === selectedItems) {
-      setNotice(`最多可选择 ${DANBOORU_RECOMMENDATION_TAG_LIMIT} 个推荐依据，请先移除一个已选标签。`);
+      Notification.warning(`最多可选择 ${DANBOORU_RECOMMENDATION_TAG_LIMIT} 个推荐依据，请先移除一个已选标签。`);
       return;
     }
     setSelectedItems(nextItems);
@@ -620,7 +624,7 @@ export default function DanbooruSearch() {
       : danbooruPreferences.disable();
     const nextItems = filterDanbooruSelection(selectedItems, nextValue);
     if (nextItems.length < selectedItems.length)
-      setNotice("已移除成人或安全性未知的推荐依据，其他已选标签继续保留。");
+      Notification.info("已移除成人或安全性未知的推荐依据，其他已选标签继续保留。");
     setSelectedItems(nextItems);
     const input = getDanbooruSelectionInput(nextItems, nextValue);
     requestRecommendations(
@@ -629,7 +633,7 @@ export default function DanbooruSearch() {
       input.show_nsfw,
     );
     if (!persisted)
-      setNotice("浏览器不允许保存个性化设置，本次选择仅在当前页面生效，刷新后可能恢复之前保存的设置。");
+      Notification.warning("浏览器不允许保存个性化设置，本次选择仅在当前页面生效，刷新后可能恢复之前保存的设置。");
     return persisted;
   }
   function changeNsfwSetting(nextValue: boolean) {
@@ -644,19 +648,23 @@ export default function DanbooruSearch() {
     setAgeConfirmationOpen(false);
     setPendingAdultSearch(null);
     if (!danbooruPreferences.disable())
-      setNotice("成人标签保持关闭，但浏览器不允许保存个性化设置。");
+      Notification.warning("成人标签保持关闭，但浏览器不允许保存个性化设置。");
   }
   function confirmAge() {
-    const persisted = applyNsfwSetting(true);
+    applyNsfwSetting(true);
     setAgeConfirmationOpen(false);
     setPendingAdultSearch(null);
     if (pendingAdultSearch) void executeSearch(pendingAdultSearch);
-    if (!persisted)
-      setNotice("浏览器不允许保存个性化设置，本次选择仅在当前页面生效，刷新后可能恢复之前保存的设置。");
   }
   const draftChanged =
     submitted &&
     (submitted.query !== preprocessPromptQuery(query) || submitted.show_nsfw !== showNsfw);
+  useNotification(
+    draftChanged && !loading && !error && data
+      ? "搜索条件已修改，请重新搜索以更新结果。"
+      : null,
+    "info",
+  );
 
   return (
     <section className="danbooru-search" aria-labelledby="danbooru-title">
@@ -758,11 +766,11 @@ export default function DanbooruSearch() {
           }}
           onRemove={(entry) => {
             if (!danbooruHistory.remove(entry))
-              setNotice("历史记录已从当前页面删除，但浏览器不允许同步到本地存储。");
+              Notification.warning("历史记录已从当前页面删除，但浏览器不允许同步到本地存储。");
           }}
           onClear={() => {
             if (!danbooruHistory.clear())
-              setNotice("历史记录已从当前页面清空，但浏览器不允许同步到本地存储。");
+              Notification.warning("历史记录已从当前页面清空，但浏览器不允许同步到本地存储。");
           }}
         />
       </Card>
@@ -772,11 +780,6 @@ export default function DanbooruSearch() {
         onCancel={cancelAgeConfirmation}
       />
 
-      {notice ? (
-        <p className="danbooru-notice" role="status">
-          {notice}
-        </p>
-      ) : null}
       <div className="danbooru-dashboard-toolbar">
         {data && submitted ? <DanbooruSearchContext key={submitted.query} query={submitted.query} keywords={data.keywords} /> : null}
         <p>搜索结果和同类标签的卡片都可选择，换搜索词不会清空选择；最多组合 {DANBOORU_RECOMMENDATION_TAG_LIMIT} 个标签共同查找三类推荐。</p>
@@ -808,10 +811,9 @@ export default function DanbooruSearch() {
           ) : error ? (
             <PanelState title="搜索服务暂不可用" error action={
               <Button size="small" onClick={() => { if (submitted) void search(submitted); }}>重试搜索</Button>
-            }>{error}</PanelState>
+            } />
           ) : data ? (
             <>
-              {draftChanged ? <p className="danbooru-draft-notice">搜索条件已修改，请重新搜索以更新结果。</p> : null}
               {data.results.length > 0 ? (
                 <DanbooruResults data={data} onCopy={(text) => void copy(text)}
                   selectedTags={selectedTags} onToggleTag={toggleRecommendationTag} />

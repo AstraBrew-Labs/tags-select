@@ -2,14 +2,12 @@
 
 import Link from "next/link";
 import { useDeferredValue, useMemo, useRef, useState } from "react";
-import { Button, Input, Modal, Pagination, Tabs } from "animal-island-ui";
-import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { Button, Input, Modal, Notification, Pagination, Tabs } from "animal-island-ui";
+import { MotionConfig } from "motion/react";
 import {
   BookmarkIcon,
   BookIcon,
-  CheckIcon,
   ChevronRightIcon,
-  CloseIcon,
   FlowerIcon,
   GridIcon,
   HelpCircleIcon,
@@ -32,6 +30,7 @@ import {
 import type { TagCategory } from "../lib/tag-catalog";
 import { useFavorites } from "../lib/use-favorites";
 import { useTagCatalog } from "../lib/use-tag-catalog";
+import { useNotification } from "../lib/use-notification";
 import TagCard from "./tag-card";
 import PromptLookup from "./prompt-lookup";
 import DanbooruSearch from "./danbooru-search";
@@ -46,10 +45,13 @@ import TagFilterBar, {
 } from "./tag-filter-bar";
 import PromptComposer from "./prompt-composer";
 import ViewportSelect from "./viewport-select";
+import UsageGuide from "./usage-guide";
+import TagGroupTabs from "./tag-group-tabs";
 import {
   adjustPromptWeights,
   clampWeightStep,
   nextWeightSyntax,
+  normalizePromptTagName,
   type WeightSyntax,
 } from "../lib/prompt-weights";
 
@@ -80,6 +82,7 @@ const iconProps = {
 
 export default function TagSelector() {
   const { catalog, loading, error, retry } = useTagCatalog();
+  useNotification(error);
   const {
     tags,
     categories,
@@ -111,7 +114,6 @@ export default function TagSelector() {
   const [selected, setSelected] = useState<string[]>([]);
   const [weights, setWeights] = useState<Record<string, number>>({});
   const [weightSyntax, setWeightSyntax] = useState<WeightSyntax>("brackets");
-  const [notice, setNotice] = useState("");
   const [dialog, setDialog] = useState<"help" | "recipes" | "clear" | null>(
     null,
   );
@@ -196,7 +198,6 @@ export default function TagSelector() {
       ...current,
       [id]: clampWeightStep((current[id] ?? 0) + delta),
     }));
-    setNotice("");
   }
   function resetWeight(id: string) {
     setWeights((current) => {
@@ -204,7 +205,6 @@ export default function TagSelector() {
       delete next[id];
       return next;
     });
-    setNotice("");
   }
   function toggleTag(id: string) {
     resetWeight(id);
@@ -213,7 +213,6 @@ export default function TagSelector() {
         ? current.filter((item) => item !== id)
         : [...current, id],
     );
-    setNotice("");
   }
   function showAllTags() {
     setWorkspaceView("discover");
@@ -223,9 +222,17 @@ export default function TagSelector() {
   async function copyPrompt() {
     try {
       await navigator.clipboard.writeText(prompt);
-      setNotice("提示词已复制，去画出你的灵感吧！");
+      Notification.success("提示词已复制，去画出你的灵感吧！");
     } catch {
-      setNotice("无法访问剪贴板，请选中下方提示词手动复制。");
+      Notification.error("无法访问剪贴板，请选中下方提示词手动复制。");
+    }
+  }
+  async function copyTag(name: string) {
+    try {
+      await navigator.clipboard.writeText(normalizePromptTagName(name));
+      Notification.success("标签已复制。");
+    } catch {
+      Notification.error("无法访问剪贴板，请选中标签文字手动复制。");
     }
   }
   function resetFilters() {
@@ -336,7 +343,6 @@ export default function TagSelector() {
               activeKey={feature}
               onChange={(key) => {
                 setFeature(key);
-                setNotice("");
               }}
               items={[
                 {
@@ -364,15 +370,12 @@ export default function TagSelector() {
                           setWeights((current) =>
                             adjustPromptWeights(selected, current, delta),
                           );
-                          setNotice("");
                         }}
                         onResetAll={() => {
                           setWeights({});
-                          setNotice("");
                         }}
                         onSwitchSyntax={() => {
                           setWeightSyntax(nextWeightSyntax);
-                          setNotice("");
                         }}
                         onClear={() => setDialog("clear")}
                         onCopy={copyPrompt}
@@ -522,93 +525,86 @@ export default function TagSelector() {
                               onChange={updateSort}
                             />
                           </div>
-                          {category !== "all" ? (
-                            <div className="group-filter">
-                              <span>子分组</span>
-                              <ViewportSelect
-                                aria-label="原站子分组"
-                                value={group}
-                                options={[
-                                  { key: "all", label: "全部分组" },
-                                  ...groups
-                                    .filter(
-                                      (item) => item.categoryId === category,
-                                    )
-                                    .map((item) => ({
-                                      key: item.id,
-                                      label: `${item.nameZh}（${item.count}）`,
-                                    })),
-                                ]}
-                                onChange={updateGroup}
-                              />
-                            </div>
-                          ) : null}
-                          {loading ? (
-                            <div className="catalog-status" role="status">
-                              <LeafIcon {...iconProps} size={34} />
-                              <h3>正在从数据库加载标签…</h3>
-                              <p>通过只读 API 读取中英文与原站分类。</p>
-                            </div>
-                          ) : error ? (
-                            <div className="catalog-status" role="alert">
-                              <HelpCircleIcon {...iconProps} size={34} />
-                              <h3>标签暂时无法加载</h3>
-                              <p>{error}</p>
-                              <Button onClick={retry}>重新加载</Button>
-                            </div>
-                          ) : null}
-                          <div
-                            ref={gridRef}
-                            className="tag-grid"
-                            aria-label="可选标签"
-                            aria-busy={loading || query !== deferredQuery}
+                          <p className="tag-image-disclaimer">
+                            声明：Tags 的例图由 Danbooru 提供，可能与 tag 本身的意思并没有关系，仅供参考。
+                            组合词条以首个标签查询例图；画师已有的本地画风参考图保留原来源。
+                          </p>
+                          <TagGroupTabs
+                            key={category}
+                            category={category}
+                            categoryName={activeCategory?.name}
+                            groups={groups}
+                            totalCount={activeCategory?.count ?? tags.length}
+                            value={group}
+                            onChange={updateGroup}
                           >
-                            {visibleTags.map((tag) => (
-                              <TagCard
-                                key={tag.id}
-                                tag={tag}
-                                selected={selectedIds.includes(tag.id)}
-                                favorite={favorites.includes(tag.id)}
-                                onSelect={() => toggleTag(tag.id)}
-                                onFavorite={() => toggleFavorite(tag.id)}
-                              />
-                            ))}
-                          </div>
-                          {!loading && !error && shownTags.length === 0 ? (
-                            <div className="empty-search">
-                              <SearchIcon {...iconProps} size={40} />
-                              <h3>还没有找到这个标签</h3>
-                              <p>试试更短的关键词，或者换一个分类看看。</p>
-                              <Button
-                                onClick={() => {
-                                  resetFilters();
-                                }}
-                              >
-                                浏览全部标签
-                              </Button>
+                            {loading ? (
+                              <div className="catalog-status" role="status">
+                                <LeafIcon {...iconProps} size={34} />
+                                <h3>正在从数据库加载标签…</h3>
+                                <p>通过只读 API 读取中英文与原站分类。</p>
+                              </div>
+                            ) : error ? (
+                              <div className="catalog-status">
+                                <HelpCircleIcon {...iconProps} size={34} />
+                                <h3>标签暂时无法加载</h3>
+                                <Button onClick={retry}>重新加载</Button>
+                              </div>
+                            ) : null}
+                            <div
+                              ref={gridRef}
+                              className="tag-grid"
+                              aria-label="可选标签"
+                              aria-busy={loading || query !== deferredQuery}
+                            >
+                              {visibleTags.map((tag) => (
+                                <TagCard
+                                  key={tag.id}
+                                  tag={tag}
+                                  selected={selectedIds.includes(tag.id)}
+                                  favorite={favorites.includes(tag.id)}
+                                  onSelect={() => toggleTag(tag.id)}
+                                  onFavorite={() => toggleFavorite(tag.id)}
+                                  onCopy={() => { void copyTag(tag.name); }}
+                                />
+                              ))}
                             </div>
-                          ) : null}
-                          {shownTags.length > PAGE_SIZE ? (
-                            <div className="tag-pagination">
-                              <Pagination
-                                total={shownTags.length}
-                                pageSize={PAGE_SIZE}
-                                current={currentPage}
-                                onChange={updatePage}
-                                variant="teal"
-                              />
+                            {!loading && !error && shownTags.length === 0 ? (
+                              <div className="empty-search">
+                                <SearchIcon {...iconProps} size={40} />
+                                <h3>还没有找到这个标签</h3>
+                                <p>试试更短的关键词，或者换一个分类看看。</p>
+                                <Button
+                                  onClick={() => {
+                                    resetFilters();
+                                  }}
+                                >
+                                  浏览全部标签
+                                </Button>
+                              </div>
+                            ) : null}
+                            {shownTags.length > PAGE_SIZE ? (
+                              <div className="tag-pagination">
+                                <Pagination
+                                  total={shownTags.length}
+                                  pageSize={PAGE_SIZE}
+                                  current={currentPage}
+                                  onChange={updatePage}
+                                  variant="teal"
+                                />
+                              </div>
+                            ) : null}
+                            <div className="browser-footnote">
+                              <LeafIcon {...iconProps} size={14} />
+                              <span>点击卡片选择 · 点击星标收藏</span>
+                              <span>
+                                {shownTags.length > 0
+                                  ? `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, shownTags.length)}`
+                                  : "0"}{" "}
+                                / {shownTags.length}
+                              </span>
                             </div>
-                          ) : null}
-                          <div className="browser-footnote">
-                            <LeafIcon {...iconProps} size={14} />
-                            <span>点击卡片选择 · 点击星标收藏</span>
-                            <span>
-                              {shownTags.length > 0
-                                ? `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, shownTags.length)}`
-                                : "0"}{" "}
-                              / {shownTags.length}
-                            </span>
-                          </div>
+                          </TagGroupTabs>
                         </div>
                       </section>
 
@@ -642,7 +638,7 @@ export default function TagSelector() {
                         setSelected((current) => [
                           ...new Set([...current, ...valid]),
                         ]);
-                        setNotice("匹配词条已加入提示词生成器。");
+                        Notification.success("匹配词条已加入提示词生成器。");
                       }}
                     />
                   ),
@@ -701,27 +697,6 @@ export default function TagSelector() {
           <p>用一点点标签，描绘大大的想象。</p>
           <span>非官方社区工具 · 只读 API 标签库</span>
         </footer>
-        <AnimatePresence>
-          {notice ? (
-            <motion.div
-              className="toast"
-              role="status"
-              initial={{ opacity: 0, transform: "translateY(8px)" }}
-              animate={{ opacity: 1, transform: "translateY(0)" }}
-              exit={{ opacity: 0 }}
-            >
-              <CheckIcon {...iconProps} />
-              <span>{notice}</span>
-              <Button
-                type="text"
-                size="small"
-                aria-label="关闭提示"
-                icon={<CloseIcon {...iconProps} size={16} />}
-                onClick={() => setNotice("")}
-              />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
         <Modal
           variant="game"
           typewriter={false}
@@ -729,7 +704,7 @@ export default function TagSelector() {
           onClose={() => setDialog(null)}
           title={
             dialog === "help"
-              ? "从一个标签开始"
+              ? "使用指南"
               : dialog === "clear"
                 ? "清空这个灵感篮子？"
                 : "给灵感一点起点"
@@ -744,7 +719,6 @@ export default function TagSelector() {
                   onClick={() => {
                     setSelected([]);
                     setWeights({});
-                    setNotice("");
                     setDialog(null);
                   }}
                 >
@@ -757,36 +731,7 @@ export default function TagSelector() {
           }
         >
           {dialog === "help" ? (
-            <div className="help-content">
-              <p>
-                这里是一个非官方 NovelAI
-                绘画提示词辅助工具，不会调用模型，也不会生成图片。
-              </p>
-              <ol>
-                <li>
-                  <strong>找到喜欢的词</strong>
-                  ：用中文或英文搜索，或从分类开始探索。
-                </li>
-                <li>
-                  <strong>组合你的画面</strong>
-                  ：在“提示词生成”中点击卡片加入提示词，再次点击取消。顶部编辑台可以逐项或批量减权、加权，点击“加权符号切换”在大括号、圆括号与 NovelAI 数值格式之间切换。使用“提示词查找”粘贴一组
-                  tags，查看每个词的中文和分类。
-                </li>
-                <li>
-                  <strong>留住常用标签</strong>
-                  ：点击小星星收藏，收藏保存在当前浏览器。
-                </li>
-                <li>
-                  <strong>带走你的灵感</strong>：复制后粘贴到 NovelAI
-                  的对应提示词输入框。
-                </li>
-              </ol>
-              <p className="help-caveat">
-                当前提供 {tags.length} 条数据库标签，数据来自
-                loadTags.js，分类与子分组遵循原站。 中英文通过只读 API
-                加载；颜色占位符需要自行替换，组合提示词按原文复制。这不是官方词库，效果因模型版本而异。
-              </p>
-            </div>
+            <UsageGuide />
           ) : dialog === "clear" ? (
             <p>
               将移除灵感篮子中的 {selectedIds.length}{" "}
@@ -807,7 +752,7 @@ export default function TagSelector() {
                     ]);
                     setFeature("generate");
                     setDialog(null);
-                    setNotice(
+                    Notification.success(
                       `已加入「${recipe.name}」配方，可以继续挑选标签。`,
                     );
                   }}

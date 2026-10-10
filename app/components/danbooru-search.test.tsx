@@ -126,7 +126,8 @@ describe("Danbooru search UI", () => {
     );
     expect(errorHtml.match(/data-panel=/g)).toHaveLength(3);
     expect(errorHtml.match(/重试推荐/g)).toHaveLength(3);
-    expect(errorHtml.match(/role="alert"/g)).toHaveLength(3);
+    expect(errorHtml).not.toContain('role="alert"');
+    expect(errorHtml).not.toContain("请稍后重试");
   });
   test("blank Chinese displays English once and no invented translation", () => {
     const data = {

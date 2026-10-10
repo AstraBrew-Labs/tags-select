@@ -110,7 +110,7 @@ describe("prompt lookup panel", () => {
   });
   test("editing draft does not silently change previously submitted results", () => {
     const html = render("unknown_tag", "long hair");
-    expect(html).toContain("输入已修改，请再次查找以更新结果");
+    expect(html).not.toContain("lookup-draft-note");
     expect(html).toContain("长发");
     expect(html).not.toContain("未匹配的提示词");
   });
@@ -119,8 +119,9 @@ describe("prompt lookup panel", () => {
       "正在加载标签库",
     );
     const html = render("long hair", "long hair", { error: "网络连接失败" });
-    expect(html).toContain('role="alert"');
-    expect(html).toContain("网络连接失败");
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain("网络连接失败");
+    expect(html).toContain("标签库暂不可用");
     expect(html).toContain("重新加载");
     expect(html).not.toContain("lookup-results");
   });

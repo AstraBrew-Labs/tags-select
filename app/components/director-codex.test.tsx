@@ -44,8 +44,9 @@ describe("director codex native component composition", () => {
     expect(loading).toContain("正在从数据库加载法典");
     expect(loading).not.toContain("codex-entry-card");
     const error = render({ data: null, error: "数据库不可用" });
-    expect(error).toContain('role="alert"');
-    expect(error).toContain("数据库不可用");
+    expect(error).not.toContain('role="alert"');
+    expect(error).not.toContain("数据库不可用");
+    expect(error).toContain("法典暂不可用");
     expect(error).toContain("重新加载法典");
   });
   test("long groups remain scrollable/selectable and provide expansion rather than ellipsis", () => {

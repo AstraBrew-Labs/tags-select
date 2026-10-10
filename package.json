@@ -34,7 +34,8 @@
     "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "undici": "^7"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
@@ -59,5 +60,8 @@
     "prisma",
     "sharp",
     "unrs-resolver"
-  ]
+  ],
+  "patchedDependencies": {
+    "animal-island-ui@2.1.1": "patches/animal-island-ui@2.1.1.patch"
+  }
 }

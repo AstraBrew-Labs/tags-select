@@ -12,6 +12,7 @@ import {
   TrashIcon,
 } from "naive-icons";
 import type { createTagCatalog } from "../lib/tag-catalog";
+import { useNotification } from "../lib/use-notification";
 
 type Props = {
   catalog: ReturnType<typeof createTagCatalog>;
@@ -74,6 +75,12 @@ export default function PromptLookup({
     ),
   ];
   const newIds = allMatchedIds.filter((id) => !selected.includes(id));
+  useNotification(
+    submitted.trim() && input !== submitted
+      ? "输入已修改，请再次查找以更新结果。"
+      : null,
+    "info",
+  );
   function submit() {
     onSubmit(input);
     setPage(1);
@@ -155,10 +162,9 @@ export default function PromptLookup({
           <p>加载完成后即可查找，不会上传你输入的提示词。</p>
         </div>
       ) : error ? (
-        <div className="catalog-status" role="alert">
+        <div className="catalog-status">
           <HelpCircleIcon {...icon} size={34} />
           <h3>标签库暂不可用</h3>
-          <p>{error}</p>
           <Button onClick={retry}>重新加载</Button>
         </div>
       ) : !submitted.trim() ? (
@@ -179,11 +185,6 @@ export default function PromptLookup({
                   ? ` · 合并 ${result.duplicates} 个重复项`
                   : ""}
               </p>
-              {input !== submitted ? (
-                <p className="lookup-draft-note">
-                  输入已修改，请再次查找以更新结果。
-                </p>
-              ) : null}
             </div>
             <div className="lookup-summary-actions">
               <Button

@@ -35,4 +35,10 @@ describe("homepage server render", () => {
     expect(html).not.toContain("试试灵感配方");
     expect(html).toContain("灵感配方");
   });
+  test("keeps the Danbooru reference disclaimer visible in discovery", () => {
+    const html = renderToStaticMarkup(<Home />);
+    expect(html).toContain('class="tag-image-disclaimer"');
+    expect(html).toContain("Tags 的例图由 Danbooru 提供");
+    expect(html).toContain("可能与 tag 本身的意思并没有关系，仅供参考");
+  });
 });

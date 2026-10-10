@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useMemo, useState } from "react";
-import { Button, Card, Input, Pagination, Tag } from "animal-island-ui";
+import { Button, Card, Input, Notification, Pagination, Tag } from "animal-island-ui";
 import {
   BookIcon,
   CopyIcon,
@@ -17,6 +17,7 @@ import {
   type AdultCodexEntry,
 } from "../lib/adult-codex";
 import { useAdultCodex } from "../lib/use-adult-codex";
+import { useNotification } from "../lib/use-notification";
 
 const icon = { color: "currentColor", size: 17, "aria-hidden": true } as const;
 const PAGE_SIZE = 12;
@@ -174,7 +175,7 @@ export function AdultCodexPanel({
   error: string | null;
   retry: () => void;
 }) {
-  const [notice, setNotice] = useState("");
+  useNotification(loading ? null : error ?? (!data ? "成人法典数据尚未导入。" : null));
   const deferredQuery = useDeferredValue(view.query);
   const index = useMemo(() => data ? createAdultCodexIndex(data) : null, [data]);
   const filtered = useMemo(
@@ -197,9 +198,9 @@ export function AdultCodexPanel({
   async function copy(text: string, title: string) {
     try {
       await navigator.clipboard.writeText(text);
-      setNotice(`已复制「${title}」的原始标签组。`);
+      Notification.success(`已复制「${title}」的原始标签组。`);
     } catch {
-      setNotice("无法访问剪贴板，请选中卡片内的提示词手动复制。");
+      Notification.error("无法访问剪贴板，请选中卡片内的提示词手动复制。");
     }
   }
 
@@ -231,10 +232,9 @@ export function AdultCodexPanel({
           <p>首次加载本站快照后，可直接在页面内搜索和复制。</p>
         </div>
       ) : error || !data ? (
-        <div className="catalog-status" role="alert">
+        <div className="catalog-status">
           <HelpCircleIcon {...icon} size={34} />
           <h3>成人法典暂不可用</h3>
-          <p>{error ?? "成人法典数据尚未导入。"}</p>
           <Button onClick={retry}>重新加载法典</Button>
         </div>
       ) : (
@@ -299,7 +299,6 @@ export function AdultCodexPanel({
                 </Button>
               ) : null}
             </div>
-            {notice ? <p className="codex-notice" role="status">{notice}</p> : null}
             <div className="codex-results" aria-label="成人法典标签组" aria-busy={deferredQuery !== view.query}>
               {filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((entry) => (
                 <AdultCodexEntryCard
