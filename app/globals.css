@@ -1550,7 +1550,7 @@ a:focus-visible,
   color: var(--animal-text-color-secondary);
 }
 
-/* Two library Tabs panels: build a prompt or understand an existing one. */
+/* Library Tabs: build, understand, or browse documented prompt groups. */
 .feature-tabs {
   margin-bottom: 8px;
 }
@@ -1558,6 +1558,9 @@ a:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+.feature-tabs [role="tablist"] {
+  flex-wrap: wrap;
 }
 .lookup-workspace {
   display: flex;
@@ -2076,4 +2079,282 @@ a:focus-visible,
 .viewport-select [role="option"] {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* Codex composition: native library surfaces/controls, app-specific layout only. */
+.codex-library {
+  display: grid;
+  gap: 24px;
+  padding-top: 8px;
+}
+.codex-intro {
+  display: grid;
+  gap: 12px;
+}
+.codex-intro-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+.codex-intro-heading > svg {
+  color: var(--animal-primary-color-active);
+  flex-shrink: 0;
+}
+.codex-intro-heading > div {
+  flex: 1;
+  min-width: 180px;
+}
+.codex-intro-heading h2 {
+  font-size: 22px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+.codex-intro-heading p,
+.codex-source-note {
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.codex-intro-heading > a,
+.codex-entry-footer > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--animal-primary-color-active);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.codex-workspace {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.codex-sidebar {
+  position: sticky;
+  top: 20px;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.codex-sidebar > h3 {
+  font-size: 16px;
+  font-weight: 800;
+}
+.codex-category-list {
+  display: grid;
+  gap: 4px;
+  max-height: min(70vh, 720px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--animal-border-color) transparent;
+  padding: 4px;
+}
+.codex-category-list > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  height: auto;
+}
+.codex-category-list > button > span {
+  width: 100%;
+}
+.codex-category-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+.codex-category-label {
+  min-width: 0;
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.codex-category-count {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.codex-browser {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.codex-result-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+}
+.codex-result-summary h3 {
+  font-size: 16px;
+  font-weight: 800;
+}
+.codex-result-summary > span,
+.codex-entry-footer > span {
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+}
+.codex-result-summary > button {
+  margin-left: auto;
+}
+.codex-notice {
+  padding: 12px 16px;
+  border: 1px dashed var(--animal-primary-color);
+  border-radius: var(--animal-border-radius-base);
+  background: var(--animal-primary-color-bg);
+  color: var(--animal-primary-color-active);
+  font-size: 13px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.codex-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.codex-entry-card {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.codex-entry-heading,
+.codex-group-heading,
+.codex-entry-footer {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.codex-entry-heading > div {
+  flex: 1;
+  min-width: 0;
+}
+.codex-entry-heading h3 {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  margin-top: 8px;
+}
+.codex-entry-heading > button,
+.codex-group-heading > button {
+  flex-shrink: 0;
+}
+.codex-notes {
+  display: grid;
+  gap: 6px;
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.codex-groups {
+  display: grid;
+  gap: 16px;
+}
+.codex-group {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px dashed var(--animal-border-color);
+}
+.codex-group-heading {
+  align-items: center;
+}
+.codex-group-heading h4 {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.codex-prompt {
+  padding: 12px;
+  border: 1px solid var(--animal-border-color-light);
+  border-radius: var(--animal-border-radius-base);
+  background: var(--animal-bg-color);
+  color: var(--animal-text-color);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow: auto;
+  scrollbar-color: var(--animal-border-color) transparent;
+  user-select: text;
+}
+.codex-prompt:focus-visible {
+  outline: 2px solid var(--animal-primary-color);
+  outline-offset: 2px;
+}
+.codex-prompt-expanded {
+  max-height: none;
+}
+.codex-group-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.codex-entry-footer {
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 6px;
+}
+.codex-entry-footer > a {
+  margin-left: auto;
+}
+@media (max-width: 1100px) {
+  .codex-workspace {
+    grid-template-columns: 180px minmax(0, 1fr);
+    gap: 16px;
+  }
+  .codex-results {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 680px) {
+  .codex-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .codex-sidebar {
+    position: static;
+  }
+  .codex-category-list {
+    display: flex;
+    max-height: none;
+    overflow-x: auto;
+    gap: 6px;
+  }
+  .codex-category-list > button {
+    width: auto;
+    flex: 0 0 auto;
+    max-width: 240px;
+  }
+  .codex-category-label {
+    white-space: nowrap;
+  }
+  .codex-intro-heading h2 {
+    font-size: 19px;
+  }
+  .codex-entry-heading {
+    flex-wrap: wrap;
+  }
+  .codex-entry-heading > div {
+    flex-basis: 100%;
+  }
+  .codex-entry-heading > button {
+    margin-left: auto;
+  }
 }

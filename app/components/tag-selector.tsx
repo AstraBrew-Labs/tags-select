@@ -7,6 +7,7 @@ import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   ArrowRightIcon,
   BookmarkIcon,
+  BookIcon,
   CheckIcon,
   ChevronRightIcon,
   CloseIcon,
@@ -35,6 +36,7 @@ import { useTagCatalog } from "../lib/use-tag-catalog";
 import TagCard from "./tag-card";
 import PromptLookup from "./prompt-lookup";
 import DanbooruSearch from "./danbooru-search";
+import DirectorCodex, { INITIAL_CODEX_VIEW, type CodexView } from "./director-codex";
 import TagFilterBar, {
   effectiveTagFilter,
   type TagFilter,
@@ -98,6 +100,7 @@ export default function TagSelector() {
   );
   const [lookupInput, setLookupInput] = useState("");
   const [lookupSubmitted, setLookupSubmitted] = useState("");
+  const [codexView, setCodexView] = useState<CodexView>(INITIAL_CODEX_VIEW);
   const [selected, setSelected] = useState<string[]>([]);
   const [weights, setWeights] = useState<Record<string, number>>({});
   const [weightSyntax, setWeightSyntax] = useState<WeightSyntax>("brackets");
@@ -651,6 +654,26 @@ export default function TagSelector() {
                           ...new Set([...current, ...valid]),
                         ]);
                         setNotice("匹配词条已加入提示词生成器。");
+                      }}
+                    />
+                  ),
+                },
+                {
+                  key: "director-codex",
+                  label: (
+                    <span className="feature-tab-label">
+                      <BookIcon {...iconProps} size={18} />
+                      所长的个人法典
+                    </span>
+                  ),
+                  children: (
+                    <DirectorCodex
+                      view={codexView}
+                      onViewChange={setCodexView}
+                      onLookup={(prompt) => {
+                        setLookupInput(prompt);
+                        setLookupSubmitted(prompt);
+                        setFeature("lookup");
                       }}
                     />
                   ),

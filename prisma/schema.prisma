@@ -71,3 +71,40 @@ model CatalogImport {
 
   @@schema("novelai_tags")
 }
+
+model CodexCategory {
+  id        String       @id
+  title     String
+  sortOrder Int
+  entries   CodexEntry[]
+
+  @@schema("novelai_tags")
+}
+
+model CodexEntry {
+  id         String        @id
+  categoryId String
+  title      String
+  anchor     String        @unique
+  groups     Json
+  notes      String[]      @default([])
+  sortOrder  Int
+  category   CodexCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([categoryId, sortOrder])
+  @@schema("novelai_tags")
+}
+
+model CodexImport {
+  id           String   @id
+  sourceUrl    String
+  sourceHash   String
+  edition      String
+  capturedAt   DateTime
+  importedAt   DateTime @default(now())
+  entryCount   Int
+  omittedCount Int
+  catalogGzip  Bytes
+
+  @@schema("novelai_tags")
+}

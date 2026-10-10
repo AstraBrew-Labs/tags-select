@@ -11,6 +11,8 @@ describe("homepage server render", () => {
     }).not.toThrow();
     expect(html).toContain("提示词生成");
     expect(html).toContain("提示词查找");
+    expect(html).toContain("所长的个人法典");
+    expect(html.indexOf("提示词查找")).toBeLessThan(html.indexOf("所长的个人法典"));
     expect(html).toContain("搜索标签");
     expect(html).toContain("我的提示词");
     expect(html).toContain("发现你的灵感");
