@@ -156,6 +156,33 @@ bun run db:codex:import
 
 只读 `GET /api/codex` 从数据库读取，不接受查询参数；其余写方法返回 405。数据库读取事务为只读，支持 gzip，不在用户访问时实时抓取原站。浏览器首次成功请求后保存**一周缓存**，键为 `novelai-tags:director-codex:v1`；一周后重新加载，读取不会续期。损坏缓存自动重新请求，失败响应不缓存，localStorage 容量不足时使用内存。此缓存与标签库、收藏、搜索历史、Danbooru 的一天缓存彼此独立。
 
+### 所长的成人法典
+
+「发现标签」中「所长的个人法典」右侧是第四个页签「所长的成人法典」。它从整理者一般所长公布的上卷 / 下卷页面提取标题、章节和原始标签组，保存为本站只读快照：
+
+- 来源：`https://nai-bot.pages.dev/法典/所长色色novalai个人法典上/` 与 `.../下/`。
+- 当前快照包含两卷、110 个章节、9,440 个标题和 13,055 个标签组；页面仅显示文本，不导入原页图片。
+- 支持按上卷 / 下卷章节筛选、标题或标签搜索、分页、复制单个标签组 / 全部标签组、跳转到“提示词查找”。
+- 成人内容只在明确的 18+ 页签中展示；用户访问时从数据库读快照，不实时抓取外站。
+- 快照源文件位于 `data/adult-codex.json`，数据库使用独立的 `AdultCodexVolume` / `AdultCodexCategory` / `AdultCodexEntry` / `AdultCodexImport` 表，不会修改普通标签库或所长的个人法典表。
+- 首次部署或更新快照时执行：
+
+```sh
+bun run db:migrate
+bun run db:adult-codex:check
+bun run db:adult-codex:import
+```
+
+- 如需更新来源，解析器为 `scripts/parse-adult-codex-source.ts`。保存两页 HTML 后运行：
+
+```sh
+ADULT_CODEX_UPPER_HTML=/absolute/path/upper.html \
+ADULT_CODEX_LOWER_HTML=/absolute/path/lower.html \
+bun run scripts/parse-adult-codex-source.ts
+```
+
+  然后再次执行 `bun run db:adult-codex:check` 和 `bun run db:adult-codex:import`。页面面板为 `app/components/adult-codex.tsx`，校验与搜索索引为 `app/lib/adult-codex.ts`，数据库只读接口为 `app/api/adult-codex/route.ts`。
+
 ### 现有标签功能
 
 - 中英文与别名搜索、原站一级分类及中文子分组筛选
@@ -212,7 +239,7 @@ bun run build
 bun start
 ```
 
-测试覆盖安全解析、原站分类顺序、完整源数据、别名与备注、135 张画师图片匹配、客户端 API 适配、收藏迁移、提示词格式及粘贴查找（权重括号、重复项、未知词和组合词条）。
+测试覆盖安全解析、原站分类顺序、完整源数据、别名与备注、135 张画师图片匹配、客户端 API 适配、收藏迁移、提示词格式、粘贴查找（权重括号、重复项、未知词和组合词条），以及所长的成人法典双卷快照校验、章节筛选、搜索、分页和复制布局。
 
 ## 主要文件
 
@@ -230,7 +257,7 @@ app/lib/catalog-types.ts         # API 中英文类型约定
 app/lib/use-tag-catalog.ts       # 前端缓存优先加载、API 请求和重试
 app/lib/catalog-cache.ts         # 一周 localStorage 缓存、校验、并发请求合并
 app/lib/tag-catalog.ts           # API 数据索引与筛选，无静态词库
-app/components/tag-selector.tsx # 两个功能面板与单一提示词篮子
+app/components/tag-selector.tsx # 发现标签的四个页签与单一提示词篮子
 app/components/prompt-lookup.tsx # 粘贴输入、解释结果与加入生成器
 app/components/danbooru-search.tsx # Danbooru 双节点搜索与双语结果
 app/lib/danbooru-recommendations.ts # Danbooru 画师 / 同类 / 关联推荐缓存
@@ -246,6 +273,12 @@ app/lib/select-menu-layout.ts    # 可测试的窗口边界计算
 app/components/selected-prompt-tag.tsx # 单行紧凑词条及紧邻加减按钮
 app/components/prompt-composer.tsx # 顶部宽幅编辑、批量操作和预览复制
 app/components/tag-card.tsx     # 整卡选择、选中配色、禁用态与独立收藏
+data/adult-codex.json             # 成人法典双卷只读快照
+scripts/parse-adult-codex-source.ts # 从保存的两页 HTML 提取成人法典
+app/api/adult-codex/route.ts      # 成人法典只读接口
+app/lib/adult-codex.ts            # 成人法典校验、索引和原文链接
+app/lib/use-adult-codex.ts       # 成人法典加载与页面内存缓存
+app/components/adult-codex.tsx   # 成人法典 18+ 目录、搜索、复制面板
 ```
 
 这是非官方社区辅助工具，包含原文件的成人内容分类；没有接入 NovelAI 账户、模型 API 或图片生成服务。源词条、颜色占位符及高级指令仍需按实际模型与使用环境自行调整。

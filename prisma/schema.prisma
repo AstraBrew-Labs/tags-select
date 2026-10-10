@@ -108,3 +108,60 @@ model CodexImport {
 
   @@schema("novelai_tags")
 }
+
+model AdultCodexVolume {
+  id         String              @id
+  label      String
+  title      String
+  url        String
+  sortOrder  Int
+  categories AdultCodexCategory[]
+  entries    AdultCodexEntry[]
+
+  @@schema("novelai_tags")
+}
+
+model AdultCodexCategory {
+  id        String             @id
+  volumeId  String
+  title     String
+  sortOrder Int
+  volume    AdultCodexVolume   @relation(fields: [volumeId], references: [id], onDelete: Restrict)
+  entries   AdultCodexEntry[]
+
+  @@index([volumeId, sortOrder])
+  @@schema("novelai_tags")
+}
+
+model AdultCodexEntry {
+  id         String             @id
+  volumeId   String
+  categoryId String
+  title      String
+  anchor     String
+  groups     Json
+  notes      String[]           @default([])
+  sortOrder  Int
+  volume     AdultCodexVolume   @relation(fields: [volumeId], references: [id], onDelete: Restrict)
+  category   AdultCodexCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([volumeId, sortOrder])
+  @@index([categoryId, sortOrder])
+  @@schema("novelai_tags")
+}
+
+model AdultCodexImport {
+  id           String   @id
+  sourceUrls   Json
+  sourceHash   String
+  capturedAt   DateTime
+  importedAt   DateTime @default(now())
+  volumeCount  Int
+  categoryCount Int
+  entryCount   Int
+  groupCount   Int
+  omittedCount Int
+  catalogGzip  Bytes
+
+  @@schema("novelai_tags")
+}

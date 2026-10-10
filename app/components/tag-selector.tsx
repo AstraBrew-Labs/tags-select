@@ -37,6 +37,10 @@ import TagCard from "./tag-card";
 import PromptLookup from "./prompt-lookup";
 import DanbooruSearch from "./danbooru-search";
 import DirectorCodex, { INITIAL_CODEX_VIEW, type CodexView } from "./director-codex";
+import AdultCodex, {
+  INITIAL_ADULT_CODEX_VIEW,
+  type AdultCodexView,
+} from "./adult-codex";
 import TagFilterBar, {
   effectiveTagFilter,
   type TagFilter,
@@ -101,6 +105,9 @@ export default function TagSelector() {
   const [lookupInput, setLookupInput] = useState("");
   const [lookupSubmitted, setLookupSubmitted] = useState("");
   const [codexView, setCodexView] = useState<CodexView>(INITIAL_CODEX_VIEW);
+  const [adultCodexView, setAdultCodexView] = useState<AdultCodexView>(
+    INITIAL_ADULT_CODEX_VIEW,
+  );
   const [selected, setSelected] = useState<string[]>([]);
   const [weights, setWeights] = useState<Record<string, number>>({});
   const [weightSyntax, setWeightSyntax] = useState<WeightSyntax>("brackets");
@@ -670,6 +677,27 @@ export default function TagSelector() {
                     <DirectorCodex
                       view={codexView}
                       onViewChange={setCodexView}
+                      onLookup={(prompt) => {
+                        setLookupInput(prompt);
+                        setLookupSubmitted(prompt);
+                        setFeature("lookup");
+                      }}
+                    />
+                  ),
+                },
+                {
+                  key: "adult-codex",
+                  label: (
+                    <span className="feature-tab-label">
+                      <BookIcon {...iconProps} size={18} />
+                      所长的成人法典
+                      <span className="adult-tab-badge">18+</span>
+                    </span>
+                  ),
+                  children: (
+                    <AdultCodex
+                      view={adultCodexView}
+                      onViewChange={setAdultCodexView}
                       onLookup={(prompt) => {
                         setLookupInput(prompt);
                         setLookupSubmitted(prompt);

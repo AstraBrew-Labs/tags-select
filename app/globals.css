@@ -2358,3 +2358,43 @@ a:focus-visible,
     margin-left: auto;
   }
 }
+
+/* 所长的成人法典：沿用个人法典的目录、卡片和复制布局。 */
+.adult-codex .codex-intro-heading > svg {
+  color: var(--animal-error-color);
+}
+.adult-codex .codex-intro-heading > span:last-child {
+  margin-left: auto;
+}
+.adult-codex-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.adult-codex-volume-menu {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+}
+.adult-codex-volume-menu > h4 {
+  padding: 4px 8px 2px;
+  color: var(--animal-text-color-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+.adult-codex .codex-category-list > .adult-codex-volume-menu > button {
+  min-height: 38px;
+}
+.adult-codex .codex-entry-heading h3 {
+  margin-top: 10px;
+}
+.adult-tab-badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--app-peach);
+  color: var(--animal-error-color);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+}

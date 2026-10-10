@@ -16,6 +16,8 @@
     "db:import:check": "bun run scripts/seed-tags.ts --dry-run",
     "db:codex:check": "bun run scripts/import-director-codex.ts --dry-run",
     "db:codex:import": "bun run scripts/import-director-codex.ts",
+    "db:adult-codex:check": "bun run scripts/import-adult-codex.ts --dry-run",
+    "db:adult-codex:import": "bun run scripts/import-adult-codex.ts",
     "db:setup": "bun run db:migrate && bun run db:seed",
     "db:studio": "prisma studio"
   },
