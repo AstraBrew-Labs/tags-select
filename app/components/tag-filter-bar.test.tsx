@@ -21,3 +21,37 @@ describe("selected-only filter", () => {
     expect(effectiveTagFilter("popular", 0)).toBe("popular");
   });
 });
+
+describe("favorites in the filter row", () => {
+  function render(
+    selectedCount: number,
+    favoritesCount: number,
+    value: "all" | "favorites" = "all",
+  ) {
+    return renderToStaticMarkup(
+      <TagFilterBar
+        value={value}
+        selectedCount={selectedCount}
+        favoritesCount={favoritesCount}
+        onChange={() => {}}
+      />,
+    );
+  }
+  test("appears only with favorites and stays to the right of selected/recommended", () => {
+    expect(render(0, 0)).not.toContain("我的收藏");
+    expect(render(1, 0)).not.toContain("我的收藏");
+    expect(render(0, 1)).toContain("我的收藏 1");
+    const html = render(2, 3);
+    expect(html).toContain("已选择 2");
+    expect(html).toContain("我的收藏 3");
+    expect(html.indexOf("我的收藏")).toBeGreaterThan(html.indexOf("已选择"));
+    expect(html.indexOf("我的收藏")).toBeGreaterThan(html.indexOf("常用推荐"));
+  });
+  test("falls back to all when the last favorite is removed", () => {
+    expect(effectiveTagFilter("favorites", 0, 0)).toBe("all");
+    expect(effectiveTagFilter("favorites", 2, 0)).toBe("all");
+    expect(effectiveTagFilter("favorites", 0, 1)).toBe("favorites");
+    expect(effectiveTagFilter("selected", 1, 0)).toBe("selected");
+    expect(render(1, 0, "favorites")).not.toContain("我的收藏");
+  });
+});

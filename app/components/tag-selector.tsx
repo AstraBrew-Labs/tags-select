@@ -2,14 +2,7 @@
 
 import Link from "next/link";
 import { useDeferredValue, useMemo, useRef, useState } from "react";
-import {
-  Button,
-  Input,
-  Modal,
-  Pagination,
-  Select,
-  Tabs,
-} from "animal-island-ui";
+import { Button, Input, Modal, Pagination, Tabs } from "animal-island-ui";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   ArrowRightIcon,
@@ -41,11 +34,13 @@ import { useFavorites } from "../lib/use-favorites";
 import { useTagCatalog } from "../lib/use-tag-catalog";
 import TagCard from "./tag-card";
 import PromptLookup from "./prompt-lookup";
+import DanbooruSearch from "./danbooru-search";
 import TagFilterBar, {
   effectiveTagFilter,
   type TagFilter,
 } from "./tag-filter-bar";
 import PromptComposer from "./prompt-composer";
+import ViewportSelect from "./viewport-select";
 import {
   adjustPromptWeights,
   clampWeightStep,
@@ -95,10 +90,12 @@ export default function TagSelector() {
   const deferredQuery = useDeferredValue(query);
   const [category, setCategory] = useState("all");
   const [group, setGroup] = useState("all");
-  const [view, setView] = useState<"explore" | "favorites">("explore");
   const [tagFilter, setTagFilter] = useState<TagFilter>("all");
   const [sort, setSort] = useState("recommended");
   const [feature, setFeature] = useState("generate");
+  const [workspaceView, setWorkspaceView] = useState<"discover" | "search">(
+    "discover",
+  );
   const [lookupInput, setLookupInput] = useState("");
   const [lookupSubmitted, setLookupSubmitted] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -109,7 +106,17 @@ export default function TagSelector() {
     null,
   );
   const { favorites, toggleFavorite } = useFavorites(normalizeTagIds);
-  const currentTagFilter = effectiveTagFilter(tagFilter, selected.length);
+  const currentTagFilter = effectiveTagFilter(
+    tagFilter,
+    selected.length,
+    favorites.length,
+  );
+  // Commit the fallback so a removed filter does not reactivate when new items
+  // arrive later, including favorites synchronized from another browser tab.
+  if (currentTagFilter !== tagFilter) {
+    setTagFilter(currentTagFilter);
+    setPage(1);
+  }
   const shownTags = useMemo(() => {
     const filtered = filterTags({
       query: deferredQuery,
@@ -117,7 +124,7 @@ export default function TagSelector() {
       group,
       onlyPopular: currentTagFilter === "popular",
       selected: currentTagFilter === "selected" ? selected : undefined,
-      favorites: view === "favorites" ? favorites : undefined,
+      favorites: currentTagFilter === "favorites" ? favorites : undefined,
     });
     return sort === "alphabetical"
       ? filtered.sort((a, b) => a.name.localeCompare(b.name))
@@ -128,7 +135,6 @@ export default function TagSelector() {
     group,
     currentTagFilter,
     selected,
-    view,
     favorites,
     sort,
     filterTags,
@@ -192,7 +198,6 @@ export default function TagSelector() {
   }
   function toggleTag(id: string) {
     resetWeight(id);
-    if (selected.length === 1 && selected[0] === id) setTagFilter("all");
     setSelected((current) =>
       current.includes(id)
         ? current.filter((item) => item !== id)
@@ -200,14 +205,10 @@ export default function TagSelector() {
     );
     setNotice("");
   }
-  function changeView(next: "explore" | "favorites") {
+  function showAllTags() {
+    setWorkspaceView("discover");
     setFeature("generate");
-    resetPage();
-    setView(next);
-    setCategory("all");
-    setGroup("all");
-    setQuery("");
-    setTagFilter("all");
+    resetFilters();
   }
   async function copyPrompt() {
     try {
@@ -246,22 +247,21 @@ export default function TagSelector() {
           <nav className="header-nav" aria-label="主导航">
             <Button
               type="text"
-              className={view === "explore" ? "nav-current" : ""}
+              className={workspaceView === "discover" ? "nav-current" : ""}
+              aria-pressed={workspaceView === "discover"}
               icon={<GridIcon {...iconProps} size={17} />}
-              onClick={() => changeView("explore")}
+              onClick={showAllTags}
             >
               发现标签
             </Button>
             <Button
               type="text"
-              className={view === "favorites" ? "nav-current" : ""}
-              icon={<BookmarkIcon {...iconProps} size={17} />}
-              onClick={() => changeView("favorites")}
+              className={workspaceView === "search" ? "nav-current" : ""}
+              aria-pressed={workspaceView === "search"}
+              icon={<SearchIcon {...iconProps} size={17} />}
+              onClick={() => setWorkspaceView("search")}
             >
-              我的收藏
-              {favorites.length > 0 ? (
-                <span className="nav-count">{favorites.length}</span>
-              ) : null}
+              搜索标签
             </Button>
             <span className="nav-divider" />
             <Button
@@ -315,6 +315,10 @@ export default function TagSelector() {
           </section>
 
           <div id="tag-workspace">
+            <div hidden={workspaceView !== "search"}>
+              <DanbooruSearch />
+            </div>
+            <div hidden={workspaceView !== "discover"}>
             <Tabs
               className="feature-tabs"
               aria-label="提示词功能"
@@ -422,29 +426,6 @@ export default function TagSelector() {
                               );
                             })}
                           </div>
-                          <div className="sidebar-divider" />
-                          <div
-                            className={`category-row${view === "favorites" ? " category-active" : ""}`}
-                          >
-                            <Button
-                              type="text"
-                              block
-                              className="category-button"
-                              icon={<StarIcon {...iconProps} size={19} />}
-                              onClick={() =>
-                                changeView(
-                                  view === "favorites"
-                                    ? "explore"
-                                    : "favorites",
-                                )
-                              }
-                            >
-                              我的收藏
-                              <span className="category-count">
-                                {favorites.length}
-                              </span>
-                            </Button>
-                          </div>
                           <div className="garden-note">
                             <span className="note-pin" />
                             <FlowerIcon {...iconProps} size={30} />
@@ -498,9 +479,11 @@ export default function TagSelector() {
                           <div className="browser-toolbar">
                             <div className="browser-heading">
                               <h2>
-                                {view === "favorites"
+                                {currentTagFilter === "favorites"
                                   ? "我的收藏"
-                                  : (activeCategory?.name ?? "发现你的灵感")}
+                                  : currentTagFilter === "selected"
+                                    ? "已选择"
+                                    : (activeCategory?.name ?? "发现你的灵感")}
                               </h2>
                               <span>{shownTags.length} 个标签</span>
                             </div>
@@ -518,9 +501,10 @@ export default function TagSelector() {
                             <TagFilterBar
                               value={currentTagFilter}
                               selectedCount={selected.length}
+                              favoritesCount={favorites.length}
                               onChange={updateTagFilter}
                             />
-                            <Select
+                            <ViewportSelect
                               aria-label="标签排序"
                               options={[
                                 { key: "recommended", label: "推荐排序" },
@@ -533,7 +517,7 @@ export default function TagSelector() {
                           {category !== "all" ? (
                             <div className="group-filter">
                               <span>子分组</span>
-                              <Select
+                              <ViewportSelect
                                 aria-label="原站子分组"
                                 value={group}
                                 options={[
@@ -585,21 +569,11 @@ export default function TagSelector() {
                           {!loading && !error && shownTags.length === 0 ? (
                             <div className="empty-search">
                               <SearchIcon {...iconProps} size={40} />
-                              <h3>
-                                {view === "favorites" && favorites.length === 0
-                                  ? "把喜欢的标签留在这里"
-                                  : "还没有找到这个标签"}
-                              </h3>
-                              <p>
-                                {view === "favorites" && favorites.length === 0
-                                  ? "点击卡片底部的星标，下次就能轻松找到它。"
-                                  : "试试更短的关键词，或者换一个分类看看。"}
-                              </p>
+                              <h3>还没有找到这个标签</h3>
+                              <p>试试更短的关键词，或者换一个分类看看。</p>
                               <Button
                                 onClick={() => {
                                   resetFilters();
-                                  if (favorites.length === 0)
-                                    setView("explore");
                                 }}
                               >
                                 浏览全部标签
@@ -683,6 +657,7 @@ export default function TagSelector() {
                 },
               ]}
             />
+            </div>
           </div>
         </main>
         <footer className="site-footer">
@@ -736,7 +711,6 @@ export default function TagSelector() {
                   onClick={() => {
                     setSelected([]);
                     setWeights({});
-                    setTagFilter("all");
                     setNotice("");
                     setDialog(null);
                   }}

@@ -162,6 +162,452 @@ a:focus-visible,
   border-radius: 12px;
 }
 
+/* Search layout only; Cards, Inputs, Buttons and Tags keep native UI styles. */
+.danbooru-search {
+  padding-top: 8px;
+}
+.danbooru-search-card {
+  padding: 24px;
+}
+.danbooru-search-intro,
+.danbooru-search-options,
+.danbooru-card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.danbooru-search-intro {
+  margin-bottom: 24px;
+}
+.danbooru-search-intro p {
+  margin-top: 8px;
+  color: var(--animal-text-color-secondary);
+  line-height: 1.8;
+}
+.danbooru-search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.danbooru-search-options {
+  flex-wrap: wrap;
+  margin-top: 16px;
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.danbooru-nsfw-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.danbooru-attribution {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--animal-border-color-light);
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.danbooru-history {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--animal-border-color-light);
+}
+.danbooru-history-header,
+.danbooru-history-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.danbooru-history-header {
+  justify-content: space-between;
+}
+.danbooru-history-header h3 {
+  font-size: 13px;
+}
+.danbooru-history-list {
+  display: grid;
+  gap: 4px;
+  max-height: 240px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.danbooru-history-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.danbooru-history-entry .danbooru-history-query {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  min-width: 0;
+  height: auto;
+  padding: 8px 12px;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.6;
+  gap: 4px;
+}
+.danbooru-history-query-text {
+  display: block;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+.danbooru-history-query > span {
+  width: 100%;
+  min-width: 0;
+}
+.danbooru-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--animal-text-color-secondary);
+  font-size: 11px;
+}
+.danbooru-history-empty,
+.danbooru-history-help {
+  margin-top: 8px;
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.danbooru-dashboard-toolbar {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0 16px;
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.danbooru-selected-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.danbooru-search-context-content,
+.danbooru-tag-details-content {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  color: var(--animal-text-color);
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.danbooru-search-context-content h3,
+.danbooru-tag-details-content h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.danbooru-search-context-content p,
+.danbooru-tag-details-content p {
+  white-space: pre-wrap;
+}
+.danbooru-search-context-content ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 6px 16px;
+  margin: 0;
+  padding-left: 20px;
+}
+.danbooru-dashboard {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: stretch;
+}
+.danbooru-dashboard .danbooru-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: clamp(340px, 44vh, 480px);
+  padding: 0;
+  overflow: hidden;
+}
+.danbooru-panel-header {
+  flex-shrink: 0;
+  padding: 16px 18px 12px;
+  border-bottom: 1px dashed var(--animal-border-color-light);
+}
+.danbooru-panel-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+.danbooru-panel-heading h3 {
+  margin: 0;
+}
+.danbooru-panel-action {
+  margin-left: auto;
+}
+.danbooru-panel-header > p,
+.danbooru-draft-notice {
+  margin-top: 8px;
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.danbooru-draft-notice {
+  margin: 0 0 12px;
+}
+.danbooru-panel-body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--animal-border-color) transparent;
+}
+.danbooru-panel-body:focus-visible {
+  outline: 2px solid var(--animal-primary-color);
+  outline-offset: -4px;
+}
+.danbooru-panel-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 100%;
+  padding: 24px 16px;
+  text-align: center;
+}
+.danbooru-panel-state h4 {
+  font-size: 16px;
+}
+.danbooru-panel-state > p {
+  max-width: 32em;
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.danbooru-card-meta,
+.danbooru-artist-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.danbooru-card-meta > span:last-child {
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+}
+.danbooru-results {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.danbooru-result-card-wrap {
+  min-width: 0;
+}
+.danbooru-result-card-wrap .danbooru-result-card {
+  min-width: 0;
+  padding: 12px 16px;
+}
+.danbooru-card-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+.danbooru-card-heading > div {
+  min-width: 0;
+}
+.danbooru-card-name {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.danbooru-card-name .danbooru-english {
+  margin-top: 0;
+  font-size: 13px;
+}
+.danbooru-card-heading h3 {
+  font-size: 16px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.danbooru-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  padding: 2px 8px;
+}
+.danbooru-card-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.danbooru-card-heading .danbooru-card-meta {
+  justify-content: flex-end;
+  max-width: 170px;
+}
+.danbooru-result-card-wrap .danbooru-tag-details {
+  margin-top: 4px;
+  padding: 14px 16px;
+}
+.danbooru-card-actions > button,
+.danbooru-wiki-link {
+  flex-shrink: 0;
+}
+.danbooru-wiki-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--animal-primary-color);
+  border-radius: var(--animal-border-radius-sm);
+  transition:
+    color var(--animal-motion-duration-fast) var(--animal-motion-ease),
+    background-color var(--animal-motion-duration-fast)
+      var(--animal-motion-ease);
+}
+.danbooru-wiki-link:hover {
+  color: var(--animal-primary-color-hover);
+  background: var(--animal-primary-color-bg);
+}
+.danbooru-english {
+  margin-top: 4px;
+  color: var(--animal-text-color-secondary);
+  overflow-wrap: anywhere;
+}
+.danbooru-definition {
+  margin: 0;
+  line-height: 1.8;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.danbooru-artist-tags {
+  margin-top: 12px;
+}
+.danbooru-artist-tags > * {
+  max-width: 100%;
+  min-height: 24px;
+  height: auto;
+  padding-block: 4px;
+}
+.danbooru-artist-tags > * > span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.danbooru-notice {
+  margin-top: 16px;
+  color: var(--animal-primary-color-active);
+}
+.danbooru-artist-card > p {
+  margin-top: 6px;
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.danbooru-artist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.danbooru-artist-grid .danbooru-artist-card {
+  min-width: 0;
+  padding: 18px;
+}
+.danbooru-artist-card h4 {
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.danbooru-artist-card h4 a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.danbooru-artist-card h4 a > svg {
+  flex-shrink: 0;
+}
+.danbooru-artist-card h4 a {
+  color: var(--animal-primary-color);
+}
+.danbooru-artist-card h4 a:hover {
+  color: var(--animal-primary-color-hover);
+}
+.danbooru-artist-card .danbooru-artist-tags {
+  margin-top: 12px;
+}
+.danbooru-recommendation-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.danbooru-recommendation-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.danbooru-recommendation-heading > div {
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .danbooru-results,
+  .danbooru-recommendation-grid,
+  .danbooru-artist-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .danbooru-card-heading {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .danbooru-card-heading .danbooru-card-meta {
+    max-width: none;
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 760px) {
+  .danbooru-dashboard {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .danbooru-dashboard .danbooru-panel {
+    height: 400px;
+  }
+}
+@media (max-width: 680px) {
+  .danbooru-search-card {
+    padding: 20px 16px;
+  }
+  .danbooru-search-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .danbooru-search-intro {
+    align-items: start;
+  }
+}
+
 .hero {
   min-height: 251px;
   position: relative;
@@ -1559,4 +2005,43 @@ a:focus-visible,
     width: 24px;
     min-width: 24px;
   }
+}
+
+/* The library Select normally opens sideways; Tabs must not clip its popup. */
+.site-shell .feature-tabs {
+  overflow: visible;
+}
+.viewport-select {
+  position: relative;
+  min-width: 0;
+}
+.viewport-select > div {
+  width: 100%;
+  min-width: 0;
+}
+.viewport-select[data-menu-open="true"] {
+  z-index: 20;
+}
+.viewport-select [role="listbox"] {
+  left: 0 !important;
+  right: auto !important;
+  top: calc(100% + 8px) !important;
+  bottom: auto !important;
+  transform: none !important;
+  margin: 0 !important;
+  width: max-content;
+  min-width: 100%;
+  max-width: var(--select-menu-width, calc(100vw - 24px));
+  max-height: var(--select-menu-height, 320px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+.viewport-select[data-menu-direction="up"] [role="listbox"] {
+  top: auto !important;
+  bottom: calc(100% + 8px) !important;
+}
+.viewport-select [role="option"] {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
