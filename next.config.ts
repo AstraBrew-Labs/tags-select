@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  outputFileTracingIncludes: {
+    "/api/catalog": ["./public/data/catalog.json.gz"],
+    "/api/codex": ["./public/data/codex.json.gz"],
+    "/api/adult-codex": ["./public/data/adult-codex.json.gz"],
+  },
   experimental: {
     agentFeedback: false,
   },

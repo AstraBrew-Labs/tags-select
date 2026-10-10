@@ -48,14 +48,15 @@ describe("wide top prompt composer", () => {
     expect(html).not.toContain("prompt-sidebar");
     expect(html).not.toContain("selected-prompt-controls");
   });
-  test("switch has only curly/round bracket labels and retains weights", () => {
+  test("switch shows curly, round and NovelAI formats and retains weights", () => {
     const curly = render();
     const round = render({ syntax: "parentheses", prompt: "(long hair)" });
+    const novelai = render({ syntax: "novelai", prompt: "1.05::long hair::" });
     expect(curly).toContain("{ }");
     expect(round).toContain("( )");
     expect(round).toContain("(long hair)");
-    expect(curly).not.toContain("数值");
-    expect(round).not.toContain("::");
+    expect(novelai).toContain("NovelAI :: ::");
+    expect(novelai).toContain("1.05::long hair::");
   });
   test("empty composer disables copy, clear and batch weighting", () => {
     const html = render({ tags: [], weights: {}, prompt: "" });

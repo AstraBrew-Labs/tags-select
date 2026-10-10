@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "prisma generate && next build",
+    "dev": "bun run data:build && next dev",
+    "build": "bun run data:build && prisma generate && next build",
+    "data:build": "bun run scripts/build-local-catalogs.ts",
     "start": "next start",
     "lint": "eslint",
     "test": "bun test",

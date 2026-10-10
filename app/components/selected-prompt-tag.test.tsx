@@ -41,6 +41,11 @@ describe("per-tag weight controls", () => {
     expect(html).not.toContain("selected-prompt-controls");
     expect(html).toContain("prompt-token-label");
   });
+  test("shows NovelAI numeric emphasis for both increases and decreases", () => {
+    expect(render(1, "novelai")).toContain("1.05::long hair::");
+    expect(render(-1, "novelai")).toContain("0.952::long hair::");
+    expect(render(0, "novelai")).not.toContain("1::long hair::");
+  });
   test("shows the selected bracket format inline without numeric factors", () => {
     expect(render(1)).toContain("{long hair} · 点击恢复默认权重");
     expect(render(1, "parentheses")).toContain(

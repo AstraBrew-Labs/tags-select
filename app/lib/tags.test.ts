@@ -99,15 +99,21 @@ describe("API catalog adapter", () => {
       ]),
     ).toEqual([longHair.id, solo.id]);
   });
-  test("copies source English rather than hashed ids or translations", () => {
+  test("copies underscore-normalized English rather than hashed ids or translations", () => {
     expect(
       catalog.formatPrompt([solo.id, girl.id, solo.id, longHair.id, "unknown"]),
-    ).toBe("solo, 1girl, long hair");
+    ).toBe("solo, 1girl, long_hair");
     expect(catalog.formatPrompt([])).toBe("");
     const composite = catalog.tags.find(
       (tag) => tag.category === "quality" && tag.name.includes(","),
     )!;
-    expect(catalog.formatPrompt([composite.id])).toBe(composite.name);
+    expect(catalog.formatPrompt([composite.id])).toBe(
+      composite.name.split(",").map((name) => name.trim().replace(/\s+/g, "_")).join(", "),
+    );
+    const mikoto = catalog.tags.find((tag) => tag.name === "misaka mikoto")!;
+    expect(mikoto).toBeDefined();
+    expect(catalog.formatPrompt([mikoto.id])).toBe("misaka_mikoto");
+    expect(mikoto.name).toBe("misaka mikoto");
   });
   test("pasted prompts resolve through the complete real API dataset", () => {
     const result = catalog.lookupPrompt(
@@ -142,16 +148,16 @@ describe("API catalog adapter", () => {
     ).toEqual([]);
     const options = { weights: { [longHair.id]: 1, [girl.id]: -1 } };
     expect(catalog.formatPrompt([longHair.id, girl.id], options)).toBe(
-      "{long hair}, [1girl]",
+      "{long_hair}, [1girl]",
     );
     expect(
       catalog.formatPrompt([longHair.id, girl.id], {
         ...options,
         syntax: "parentheses",
       }),
-    ).toBe("(long hair), [1girl]");
+    ).toBe("(long_hair), [1girl]");
     expect(catalog.formatPrompt([longHair.id, girl.id])).toBe(
-      "long hair, 1girl",
+      "long_hair, 1girl",
     );
   });
   test("all recipe ids resolve to database/API records", () => {

@@ -16,6 +16,7 @@ import {
   clampWeightStep,
   MAX_WEIGHT_STEP,
   MIN_WEIGHT_STEP,
+  WEIGHT_SYNTAX_LABELS,
   type WeightSyntax,
 } from "../lib/prompt-weights";
 import type { NovelTag } from "../lib/tag-catalog";
@@ -130,17 +131,14 @@ export default function PromptComposer({
               type="link"
               size="small"
               aria-label="加权符号切换"
-              title="切换大括号与圆括号，保留每项权重档位"
+              title="切换大括号、圆括号与 NovelAI 数值格式，保留每项权重档位"
               onClick={onSwitchSyntax}
             >
               加权符号切换{" "}
               <span className="composer-syntax-value">
-                {syntax === "brackets" ? "{ }" : "( )"}
+                {WEIGHT_SYNTAX_LABELS[syntax]}
               </span>
             </Button>
-            <span className="composer-weight-hint">
-              [ ] 减权 · 点击词条恢复默认
-            </span>
           </div>
         </div>
         <div className="prompt-token-list" aria-label="已选择的提示词">

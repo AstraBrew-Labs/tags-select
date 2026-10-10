@@ -5,7 +5,6 @@ import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { Button, Input, Modal, Pagination, Tabs } from "animal-island-ui";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
-  ArrowRightIcon,
   BookmarkIcon,
   BookIcon,
   CheckIcon,
@@ -50,6 +49,7 @@ import ViewportSelect from "./viewport-select";
 import {
   adjustPromptWeights,
   clampWeightStep,
+  nextWeightSyntax,
   type WeightSyntax,
 } from "../lib/prompt-weights";
 
@@ -371,9 +371,7 @@ export default function TagSelector() {
                           setNotice("");
                         }}
                         onSwitchSyntax={() => {
-                          setWeightSyntax((current) =>
-                            current === "brackets" ? "parentheses" : "brackets",
-                          );
+                          setWeightSyntax(nextWeightSyntax);
                           setNotice("");
                         }}
                         onClear={() => setDialog("clear")}
@@ -614,22 +612,6 @@ export default function TagSelector() {
                         </div>
                       </section>
 
-                      <section className="bottom-banner">
-                        <div className="banner-flower">
-                          <FlowerIcon {...iconProps} size={29} />
-                        </div>
-                        <div>
-                          <h2>好画面，始于一个小小的灵感。</h2>
-                          <p>不确定从哪里开始？给自己一份轻巧的灵感配方。</p>
-                        </div>
-                        <Button
-                          icon={<StarIcon {...iconProps} size={18} />}
-                          onClick={() => setDialog("recipes")}
-                        >
-                          试试灵感配方
-                          <ArrowRightIcon {...iconProps} size={17} />
-                        </Button>
-                      </section>
                     </>
                   ),
                 },
@@ -787,7 +769,7 @@ export default function TagSelector() {
                 </li>
                 <li>
                   <strong>组合你的画面</strong>
-                  ：在“提示词生成”中点击卡片加入提示词，再次点击取消。顶部编辑台可以逐项或批量减权、加权，点击“加权符号切换”在大括号与圆括号之间切换。使用“提示词查找”粘贴一组
+                  ：在“提示词生成”中点击卡片加入提示词，再次点击取消。顶部编辑台可以逐项或批量减权、加权，点击“加权符号切换”在大括号、圆括号与 NovelAI 数值格式之间切换。使用“提示词查找”粘贴一组
                   tags，查看每个词的中文和分类。
                 </li>
                 <li>

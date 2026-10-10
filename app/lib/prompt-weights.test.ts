@@ -6,6 +6,8 @@ import {
   MAX_WEIGHT_STEP,
   MIN_WEIGHT_STEP,
   adjustPromptWeights,
+  nextWeightSyntax,
+  normalizePromptTagName,
 } from "./prompt-weights";
 import { createPromptLookup } from "./prompt-lookup";
 
@@ -23,7 +25,7 @@ describe("selected prompt weights", () => {
     expect(formatWeightedTag("long hair", -2)).toBe("[[long hair]]");
     expect(formatWeightedTag("{bad}", -1)).toBe("[{bad}]");
   });
-  test("symbol switching means curly vs round brackets, never a numeric output", () => {
+  test("round bracket format retains its existing output", () => {
     expect(formatWeightedTag("long hair", 1, "parentheses")).toBe(
       "(long hair)",
     );
@@ -37,6 +39,25 @@ describe("selected prompt weights", () => {
       "[[long hair]]",
     );
   });
+  test("cycles all three formats and returns to the initial format", () => {
+    expect(nextWeightSyntax("brackets")).toBe("parentheses");
+    expect(nextWeightSyntax("parentheses")).toBe("novelai");
+    expect(nextWeightSyntax("novelai")).toBe("brackets");
+  });
+  test("NovelAI numeric format supports positive, negative, zero and bounded weights", () => {
+    expect(formatWeightedTag("long hair", 1, "novelai")).toBe("1.05::long hair::");
+    expect(formatWeightedTag("long hair", 2, "novelai")).toBe("1.103::long hair::");
+    expect(formatWeightedTag("long hair", -1, "novelai")).toBe("0.952::long hair::");
+    expect(formatWeightedTag("long hair", -2, "novelai")).toBe("0.907::long hair::");
+    expect(formatWeightedTag("long hair", 0, "novelai")).toBe("long hair");
+    expect(formatWeightedTag("long hair", 999, "novelai")).toBe("2.653::long hair::");
+    expect(formatWeightedTag("long hair", -999, "novelai")).toBe("0.377::long hair::");
+    expect(formatWeightedTag("long hair", NaN, "novelai")).toBe("long hair");
+    expect(formatWeightedPrompt([
+      { name: "best quality, amazing quality", step: 1 },
+      { name: "best quality, amazing quality", step: -1 },
+    ], "novelai")).toBe("1.05::best_quality, amazing_quality::");
+  });
   test("bounds repeated clicks and ignores non-finite state", () => {
     expect(clampWeightStep(999)).toBe(MAX_WEIGHT_STEP);
     expect(clampWeightStep(-999)).toBe(MIN_WEIGHT_STEP);
@@ -44,17 +65,18 @@ describe("selected prompt weights", () => {
     expect(clampWeightStep(NaN)).toBe(0);
     expect(clampWeightStep(Infinity)).toBe(0);
   });
-  test("switching syntax or returning a step to zero does not alter source values/order", () => {
+  test("switching syntax keeps normalized output names and source order", () => {
     const entries = [
       { name: "1girl", step: 0 },
       { name: "long hair", step: 2 },
       { name: "solo", step: -1 },
     ];
-    expect(formatWeightedPrompt(entries)).toBe("1girl, {{long hair}}, [solo]");
+    expect(formatWeightedPrompt(entries)).toBe("1girl, {{long_hair}}, [solo]");
     expect(formatWeightedPrompt(entries, "parentheses")).toBe(
-      "1girl, ((long hair)), [solo]",
+      "1girl, ((long_hair)), [solo]",
     );
-    expect(formatWeightedPrompt(entries)).toBe("1girl, {{long hair}}, [solo]");
+    expect(formatWeightedPrompt(entries, "novelai")).toBe("1girl, 1.103::long_hair::, 0.952::solo::");
+    expect(formatWeightedPrompt(entries)).toBe("1girl, {{long_hair}}, [solo]");
     expect(formatWeightedTag("long hair", 0)).toBe("long hair");
   });
   test("batch adjustments apply once to each selected token and respect limits", () => {
@@ -80,9 +102,34 @@ describe("selected prompt weights", () => {
         { name: "best quality, amazing quality", step: 1 },
         { name: "best quality, amazing quality", step: -1 },
       ]),
-    ).toBe("{best quality, amazing quality}");
+    ).toBe("{best_quality, amazing_quality}");
   });
-  test("the lookup feature recognizes both weighted output formats including comma groups", () => {
+  test("normalizes character names, repeated whitespace and composite tags only on output", () => {
+    expect(normalizePromptTagName("misaka mikoto")).toBe("misaka_mikoto");
+    expect(normalizePromptTagName("  misaka   mikoto\t")).toBe("misaka_mikoto");
+    expect(normalizePromptTagName("misaka_mikoto")).toBe("misaka_mikoto");
+    expect(normalizePromptTagName("misaka mikoto, long hair,artist:john smith")).toBe(
+      "misaka_mikoto, long_hair, artist:john_smith",
+    );
+    expect(normalizePromptTagName("saber (fate/stay night)")).toBe("saber_(fate/stay_night)");
+    expect(normalizePromptTagName("artist:anmi, 1girl")).toBe("artist:anmi, 1girl");
+    const entries = [{ name: "misaka mikoto", step: 1 }];
+    expect(formatWeightedPrompt(entries)).toBe("{misaka_mikoto}");
+    expect(formatWeightedPrompt(entries, "parentheses")).toBe("(misaka_mikoto)");
+    expect(formatWeightedPrompt(entries, "novelai")).toBe("1.05::misaka_mikoto::");
+    expect(formatWeightedPrompt([{ name: "misaka mikoto", step: -1 }], "novelai")).toBe(
+      "0.952::misaka_mikoto::",
+    );
+    expect(entries[0].name).toBe("misaka mikoto");
+    expect(formatWeightedTag(entries[0].name, 1)).toBe("{misaka mikoto}");
+  });
+  test("deduplicates space and underscore variants using the first selected weight", () => {
+    expect(formatWeightedPrompt([
+      { name: "misaka mikoto", step: 1 },
+      { name: "misaka_mikoto", step: -1 },
+    ])).toBe("{misaka_mikoto}");
+  });
+  test("the lookup feature recognizes all three weighted formats including comma groups", () => {
     const lookup = createPromptLookup([
       {
         id: "hair",
@@ -103,7 +150,7 @@ describe("selected prompt weights", () => {
         popular: false,
       },
     ]);
-    for (const syntax of ["brackets", "parentheses"] as const) {
+    for (const syntax of ["brackets", "parentheses", "novelai"] as const) {
       const prompt = formatWeightedPrompt(
         [
           { name: "long hair", step: 2 },

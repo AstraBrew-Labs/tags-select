@@ -8,7 +8,8 @@ export function createPrismaClient() {
       connectionString: databaseUrl(),
       connectionTimeoutMillis: 8_000,
       max: 5,
-      maxUses: 1,
+      idleTimeoutMillis: 30_000,
+      keepAlive: true,
     },
     { schema: DATABASE_SCHEMA },
   );

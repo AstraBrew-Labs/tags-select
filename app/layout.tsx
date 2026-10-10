@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "animal-island-ui/style";
 import "./globals.css";
+import DatasetPrefetch from "./components/dataset-prefetch";
 
 export const metadata: Metadata = {
   title: "NovelAI Tags 选择器 · 让灵感慢慢生长",
@@ -20,7 +21,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="zh-CN">
       {/* Extensions may inject attributes such as cz-shortcut-listen before hydration.
           Suppress only body-level differences; child components remain checked. */}
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning><DatasetPrefetch />{children}</body>
     </html>
   );
 }

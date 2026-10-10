@@ -27,4 +27,12 @@ describe("homepage server render", () => {
     expect(html).not.toContain("我的收藏");
     expect(html).not.toContain("已选择 0");
   });
+  test("removes the entire bottom inspiration banner", () => {
+    const html = renderToStaticMarkup(<Home />);
+    expect(html).not.toContain("bottom-banner");
+    expect(html).not.toContain("好画面，始于一个小小的灵感。");
+    expect(html).not.toContain("不确定从哪里开始？");
+    expect(html).not.toContain("试试灵感配方");
+    expect(html).toContain("灵感配方");
+  });
 });

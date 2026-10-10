@@ -1,4 +1,4 @@
-/** Client-side index of API data. There is no bundled static tag collection. */
+/** Client-side index shared by local snapshots and cached API data. */
 import type { CatalogResponse, TagCategory } from "./catalog-types";
 import { createPromptLookup } from "./prompt-lookup";
 import {

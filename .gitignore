@@ -42,4 +42,5 @@ next-env.d.ts
 
 # Generated Prisma client and sample environment template
 /generated/prisma/
+/public/data/
 !.env.example
