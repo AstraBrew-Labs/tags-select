@@ -1,5 +1,6 @@
 import { getCatalogStorage, type CatalogStorage } from "./catalog-cache";
 import { parseDanbooruInput, type DanbooruSearchInput } from "./danbooru-types";
+import { preparePromptSearch } from "./prompt-preprocessing";
 
 export const DANBOORU_HISTORY_KEY = "novelai-tags:danbooru-history:v1";
 export const DANBOORU_HISTORY_LIMIT = 30;
@@ -7,6 +8,18 @@ export type DanbooruHistoryEntry = DanbooruSearchInput & {
   lastSearchedAt: number;
 };
 const EMPTY_HISTORY: readonly DanbooruHistoryEntry[] = [];
+
+function parseHistoryInput(input: DanbooruSearchInput): DanbooruSearchInput | null {
+  try {
+    const prepared = preparePromptSearch(input.query);
+    // Validate ordinary API options and every batch without imposing the
+    // upstream single-request length on a complete locally batched history.
+    if (!prepared.queries.every((query) => parseDanbooruInput({ ...input, query }))) return null;
+    return { query: prepared.query, limit: input.limit, show_nsfw: input.show_nsfw };
+  } catch {
+    return null;
+  }
+}
 
 export function getDanbooruHistoryEntryKey(input: DanbooruSearchInput) {
   return JSON.stringify([input.query.trim(), input.limit, input.show_nsfw]);
@@ -29,7 +42,7 @@ export function createDanbooruHistoryStore({
       if (!target) return null;
       const raw = target.getItem(DANBOORU_HISTORY_KEY);
       if (!raw) return EMPTY_HISTORY;
-      if (raw.length > 64_000) return EMPTY_HISTORY;
+      if (raw.length > 384_000) return EMPTY_HISTORY;
       const stored: unknown = JSON.parse(raw);
       if (
         typeof stored !== "object" ||
@@ -50,7 +63,7 @@ export function createDanbooruHistoryStore({
           !Number.isSafeInteger(entry.lastSearchedAt) ||
           entry.lastSearchedAt < 0 || entry.lastSearchedAt > time
         ) continue;
-        const input = parseDanbooruInput({
+        const input = parseHistoryInput({
           query: entry.query,
           limit: entry.limit,
           show_nsfw: entry.show_nsfw,
@@ -129,7 +142,7 @@ export function createDanbooruHistoryStore({
       };
     },
     record(input: DanbooruSearchInput) {
-      const normalized = parseDanbooruInput(input);
+      const normalized = parseHistoryInput(input);
       if (!normalized) return false;
       initialize();
       const key = getDanbooruHistoryEntryKey(normalized);

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import DanbooruSearch, {
   DanbooruResults,
   DanbooruRecommendations,
+  DanbooruSelectedTags,
   DanbooruSearchContext,
   DanbooruTagDetails,
   getDanbooruDisplayName,
@@ -21,6 +22,10 @@ describe("Danbooru search UI", () => {
     expect(html).toContain("成功结果缓存一天");
     expect(html).toContain("搜索历史");
     expect(html).toContain("暂无搜索记录");
+    expect(html).toContain("<textarea");
+    expect(html).toMatch(/maxlength="10000"/i);
+    expect(html).toContain("自动去除加减权语法");
+    expect(html).toContain("清空输入");
     expect(html).not.toContain("Authorization");
   });
   test("renders bilingual results, native cards and transparent copy buttons", () => {
@@ -156,6 +161,30 @@ describe("Danbooru search UI", () => {
     );
     expect(unselectedHtml).toContain("点击卡片选择此标签");
   });
+  test("recommendation basis displays selections that are absent from current search results", () => {
+    const items = [
+      danbooruFixture.results[0],
+      { ...danbooruFixture.results[0], tag: "long_hair", cn_name: "" },
+    ];
+    const html = renderToStaticMarkup(
+      <DanbooruSelectedTags items={items} onRemove={() => {}} onClear={() => {}} />,
+    );
+    expect(html).toContain("跨搜索推荐依据");
+    expect(html).toContain("推荐依据 2/8");
+    expect(html).toContain("白色水手服 · white_serafuku");
+    expect(html).toContain("long_hair");
+    expect(html).toContain("清空选择");
+    expect(html.match(/aria-label="close"/g)).toHaveLength(2);
+    expect(html).not.toContain("checkbox");
+    expect(renderToStaticMarkup(
+      <DanbooruSelectedTags items={[]} onRemove={() => {}} onClear={() => {}} />,
+    )).toBe("");
+    const currentResults = renderToStaticMarkup(
+      <DanbooruResults data={danbooruFixture} selectedTags={items.map((item) => item.tag)}
+        onCopy={() => {}} onToggleTag={() => {}} />,
+    );
+    expect(currentResults).toContain('aria-pressed="true"');
+  });
   test("renders artist, same-category and related recommendation sections", () => {
     const html = renderToStaticMarkup(
       <DanbooruRecommendations
@@ -200,5 +229,44 @@ describe("Danbooru search UI", () => {
     expect(html).toContain('href="https://danbooru.donmai.us/posts?tags=artist_one"');
     expect(html).not.toContain("wiki_pages/artist");
     expect(html).toContain('href="https://danbooru.donmai.us/wiki_pages/white_sailor_collar"');
+  });
+  test("same-category cards share search selection states with actions outside the card", () => {
+    const same = {
+      tag: "white_sailor_collar", cn_name: "白色水手领", category: "General",
+      sources: ["white_serafuku"], wiki: "说明",
+    };
+    const result = {
+      cached: false,
+      data: {
+        artists: [], sameCategory: [same],
+        related: [{ ...same, tag: "related_only" }],
+        nodes: {
+          artists: "domestic", sameCategory: "domestic", related: "domestic",
+        } as const,
+      },
+    };
+    const props = { result, onCopy: () => {}, onToggleTag: () => {} };
+    const html = renderToStaticMarkup(
+      <DanbooruRecommendations {...props} selectedTags={["white_serafuku", same.tag]} />,
+    );
+    const panel = html.slice(html.indexOf('data-panel="same-category"'), html.indexOf('data-panel="related"'));
+    expect(panel).toContain('role="button"');
+    expect(panel).toContain('tabindex="0"');
+    expect(panel).toContain('aria-pressed="true"');
+    expect(panel).toContain("再次点击取消");
+    expect(panel).toContain("点击卡片加入推荐依据");
+    expect(panel).not.toContain("checkbox");
+    const heading = panel.indexOf("<h3>白色水手领</h3>");
+    const actions = panel.indexOf('class="danbooru-card-actions"');
+    expect(actions).toBeGreaterThan(heading);
+    expect(panel.slice(heading, actions)).not.toContain("<button");
+    expect(panel.slice(heading, actions)).not.toContain("<a ");
+    expect(panel).toContain("复制 推荐标签 white_sailor_collar");
+    const unselected = renderToStaticMarkup(
+      <DanbooruRecommendations {...props} selectedTags={["white_serafuku"]} />,
+    );
+    expect(unselected).toContain('aria-pressed="false"');
+    const relatedPanel = html.slice(html.indexOf('data-panel="related"'));
+    expect(relatedPanel).not.toContain("aria-pressed");
   });
 });

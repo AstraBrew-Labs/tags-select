@@ -1,10 +1,13 @@
 import {
   DANBOORU_SERVICE_ERROR,
+  DANBOORU_QUERY_MAX_LENGTH,
+  applyDanbooruNsfwFilter,
   parseDanbooruResponse,
   type DanbooruSearchInput,
   type DanbooruSearchResponse,
 } from "./danbooru-types";
 import { getCatalogStorage, type CatalogStorage } from "./catalog-cache";
+import { preparePromptSearch } from "./prompt-preprocessing";
 
 // v2 invalidates v1 entries created before the server enforced show_nsfw.
 export const DANBOORU_CACHE_KEY = "novelai-tags:danbooru-search:v2";
@@ -23,7 +26,7 @@ function cacheKey(input: DanbooruSearchInput) {
   return JSON.stringify([input.query.trim(), input.limit, input.show_nsfw]);
 }
 
-/** Successful query+options results only; bounded cache, fixed seven-day TTL. */
+/** Successful query+options results only; bounded cache, fixed one-day TTL. */
 export function createDanbooruLoader({
   storage,
   fetchSearch,
@@ -89,7 +92,7 @@ export function createDanbooruLoader({
       // Keep the successful result in memory if persistence fails.
     }
   }
-  async function load(input: DanbooruSearchInput): Promise<SearchResult> {
+  async function loadSingle(input: DanbooruSearchInput): Promise<SearchResult> {
     const key = cacheKey(input);
     const remembered = memory.get(key);
     const entry =
@@ -114,6 +117,49 @@ export function createDanbooruLoader({
       .finally(() => pending.delete(key));
     pending.set(key, promise);
     return promise;
+  }
+  async function load(input: DanbooruSearchInput): Promise<SearchResult> {
+    const { queries } = preparePromptSearch(input.query, DANBOORU_QUERY_MAX_LENGTH);
+    if (queries.length === 1) return loadSingle({ ...input, query: queries[0] });
+    const batches: SearchResult[] = [];
+    // At most two requests concurrently; every batch retains domestic-first
+    // fallback, safety options and its own one-day cache.
+    let cursor = 0;
+    let failed = false;
+    await Promise.all(Array.from({ length: 2 }, async () => {
+      while (!failed && cursor < queries.length) {
+        const index = cursor++;
+        try {
+          batches[index] = await loadSingle({ ...input, query: queries[index] });
+        } catch (error) {
+          failed = true;
+          throw error;
+        }
+      }
+    }));
+    const unique = new Map<string, DanbooruSearchResponse["results"][number]>();
+    for (const batch of batches) {
+      for (const tag of applyDanbooruNsfwFilter(batch.data, input.show_nsfw).results) {
+        const previous = unique.get(tag.tag);
+        if (!previous || tag.final_score > previous.final_score) unique.set(tag.tag, tag);
+      }
+    }
+    const results = [...unique.values()]
+      .sort((a, b) => b.final_score - a.final_score)
+      .slice(0, input.limit);
+    return {
+      cached: batches.every((batch) => batch.cached),
+      data: {
+        results,
+        tags_all: results.map((tag) => tag.tag).join(", "),
+        tags_sfw: applyDanbooruNsfwFilter({
+          results, tags_all: "", tags_sfw: "", keywords: [],
+        }, false).results.map((tag) => tag.tag).join(", "),
+        keywords: [...new Set(batches.flatMap((batch) => batch.data.keywords))],
+        node: batches.some((batch) => batch.data.node === "international")
+          ? "international" : "domestic",
+      },
+    };
   }
   return { load };
 }

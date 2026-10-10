@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Button, Card, Collapse, Input, Switch, Tag, Title } from "animal-island-ui";
+import { Button, Card, Collapse, Switch, Tag, Title } from "animal-island-ui";
 import {
   CopyIcon,
   ExternalLinkIcon,
@@ -11,7 +11,6 @@ import {
 } from "naive-icons";
 import {
   DANBOORU_DEFAULT_LIMIT,
-  DANBOORU_QUERY_MAX_LENGTH,
   DANBOORU_RECOMMENDATION_TAG_LIMIT,
   DANBOORU_SERVICE_ERROR,
   applyDanbooruNsfwFilter,
@@ -27,6 +26,19 @@ import {
 } from "../lib/danbooru-recommendations";
 import { danbooruHistory } from "../lib/danbooru-history";
 import DanbooruSearchHistory from "./danbooru-search-history";
+import DanbooruAgeConfirmation from "./danbooru-age-confirmation";
+import {
+  danbooruPreferences,
+  requiresDanbooruAgeConfirmation,
+} from "../lib/danbooru-preferences";
+import {
+  createDanbooruRecommendationSelection,
+  filterDanbooruSelection,
+  getDanbooruSelectionInput,
+  toggleDanbooruSelection,
+  type DanbooruSelection,
+} from "../lib/danbooru-selection";
+import { preparePromptSearch, preprocessPromptQuery, PROMPT_SEARCH_MAX_LENGTH } from "../lib/prompt-preprocessing";
 
 const icon = { color: "currentColor", size: 18, "aria-hidden": true } as const;
 const categoryNames: Record<string, string> = {
@@ -303,8 +315,48 @@ export function DanbooruResults({
   );
 }
 
-function RecommendationTagCard({ tag, onCopy }: { tag: DetailTag; onCopy: (text: string) => void }) {
-  return <DanbooruTagCard tag={tag} onCopy={onCopy} recommendation />;
+function RecommendationTagCard({
+  tag,
+  onCopy,
+  selected = false,
+  onToggleTag,
+}: {
+  tag: DetailTag;
+  onCopy: (text: string) => void;
+  selected?: boolean;
+  onToggleTag?: (tag: string) => void;
+}) {
+  return <DanbooruTagCard tag={tag} onCopy={onCopy} selected={selected}
+    onToggleTag={onToggleTag} recommendation />;
+}
+
+export function DanbooruSelectedTags({
+  items,
+  onRemove,
+  onClear,
+}: {
+  items: readonly DanbooruSelection[];
+  onRemove: (tag: string) => void;
+  onClear: () => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="danbooru-selected-tags" aria-label="跨搜索推荐依据">
+      <span>推荐依据 {items.length}/{DANBOORU_RECOMMENDATION_TAG_LIMIT}</span>
+      {items.map((item) => {
+        const name = getDanbooruDisplayName(item);
+        return (
+          <Tag key={item.tag} size="small" variant="soft" color="app-teal"
+            className="danbooru-selected-tag" closable onClose={() => onRemove(item.tag)}>
+            <span title={`移除推荐依据：${item.tag}`}>
+              {name === item.tag ? item.tag : `${name} · ${item.tag}`}
+            </span>
+          </Tag>
+        );
+      })}
+      <Button type="link" size="small" onClick={onClear}>清空选择</Button>
+    </div>
+  );
 }
 
 export function DanbooruRecommendations({
@@ -314,6 +366,7 @@ export function DanbooruRecommendations({
   loading = false,
   error = "",
   onRetry,
+  onToggleTag,
 }: {
   result: RecommendationResult | null;
   selectedTags: readonly string[];
@@ -321,6 +374,7 @@ export function DanbooruRecommendations({
   loading?: boolean;
   error?: string;
   onRetry?: () => void;
+  onToggleTag?: (tag: string) => void;
 }) {
   const data = result?.data;
   const ready = selectedTags.length > 0 && !loading && !error && data;
@@ -381,12 +435,15 @@ export function DanbooruRecommendations({
         id="same-category"
         title="同类标签"
         count={ready ? data.sameCategory.length : undefined}
-        description={description(data?.nodes.sameCategory)}
+        description={`${description(data?.nodes.sameCategory)}${ready && onToggleTag ? " · 点击卡片加入推荐依据" : ""}`}
         busy={loading}
       >
         {ready ? data.sameCategory.length > 0 ? (
           <div className="danbooru-recommendation-grid">
-            {data.sameCategory.map((tag) => <RecommendationTagCard key={tag.tag} tag={tag} onCopy={onCopy} />)}
+            {data.sameCategory.map((tag) => (
+              <RecommendationTagCard key={tag.tag} tag={tag} onCopy={onCopy}
+                selected={selectedTags.includes(tag.tag)} onToggleTag={onToggleTag} />
+            ))}
           </div>
         ) : <PanelState title="暂无同类标签">试试选择其他标签，或调整标签组合。</PanelState> : pendingState}
       </DashboardPanel>
@@ -413,14 +470,20 @@ export default function DanbooruSearch() {
     danbooruHistory.getSnapshot,
     danbooruHistory.getServerSnapshot,
   );
+  const showNsfw = useSyncExternalStore(
+    danbooruPreferences.subscribe,
+    danbooruPreferences.getSnapshot,
+    danbooruPreferences.getServerSnapshot,
+  );
   const [query, setQuery] = useState("");
-  const [showNsfw, setShowNsfw] = useState(false);
+  const [ageConfirmationOpen, setAgeConfirmationOpen] = useState(false);
+  const [pendingAdultSearch, setPendingAdultSearch] = useState<DanbooruSearchInput | null>(null);
   const [submitted, setSubmitted] = useState<DanbooruSearchInput | null>(null);
   const [result, setResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedItems, setSelectedItems] = useState<readonly DanbooruSelection[]>([]);
   const [recommendationResult, setRecommendationResult] =
     useState<RecommendationResult | null>(null);
   const [recommendationLoading, setRecommendationLoading] = useState(false);
@@ -436,20 +499,38 @@ export default function DanbooruSearch() {
   );
 
   async function search(input: DanbooruSearchInput) {
+    try {
+      input = { ...input, query: preparePromptSearch(input.query).query };
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "提示词格式无效，请检查输入。");
+      return;
+    }
+    // Historical adult searches and retries must use the same confirmation gate
+    // as the switch, rather than treating old search metadata as consent.
+    if (requiresDanbooruAgeConfirmation(input, danbooruPreferences.getSnapshot())) {
+      setPendingAdultSearch(input);
+      setAgeConfirmationOpen(true);
+      return;
+    }
+    await executeSearch(input);
+  }
+
+  async function executeSearch(input: DanbooruSearchInput) {
+    const adultEnabled = danbooruPreferences.getSnapshot();
+    // Defense in depth: an unchecked history/cache flag never authorizes NSFW.
+    input = { ...input, show_nsfw: input.show_nsfw && adultEnabled };
     const id = ++requestId.current;
-    recommendationRequestId.current += 1;
     setSubmitted(input);
     setLoading(true);
     setError("");
     setNotice("");
+    // History replay may restore a different safety setting. Apply that setting
+    // to the independent selection without discarding safe cross-query choices.
+    if (input.show_nsfw !== adultEnabled) applyNsfwSetting(input.show_nsfw);
     if (!danbooruHistory.record(input)) {
       setNotice("浏览器不允许保存历史记录，本次记录仅保留在当前页面，刷新后可能丢失。");
     }
     setResult(null);
-    setSelectedTags([]);
-    setRecommendationResult(null);
-    setRecommendationError("");
-    setRecommendationLoading(false);
     try {
       const next = await danbooruLoader.load(input);
       if (requestId.current === id) setResult(next);
@@ -477,12 +558,8 @@ export default function DanbooruSearch() {
         node: result.data.node,
       }
     : undefined;
-  const selectedResultTags =
-    data?.results.filter((tag) => selectedTags.includes(tag.tag)) ?? [];
-  const recommendationTags = selectedResultTags.map((tag) => tag.tag);
-  const recommendationCategories = [
-    ...new Set(selectedResultTags.map((tag) => tag.category)),
-  ];
+  const recommendationInput = getDanbooruSelectionInput(selectedItems, showNsfw);
+  const selectedTags = recommendationInput.tags;
   function requestRecommendations(
     tags: string[],
     categories: string[],
@@ -517,39 +594,69 @@ export default function DanbooruSearch() {
       });
   }
   function toggleRecommendationTag(tag: string) {
-    const nextTags = selectedTags.includes(tag)
-      ? selectedTags.filter((item) => item !== tag)
-      : [...selectedTags, tag].slice(-DANBOORU_RECOMMENDATION_TAG_LIMIT);
-    const nextItems =
-      data?.results.filter((item) => nextTags.includes(item.tag)) ?? [];
-    setSelectedTags(nextTags);
+    const sameCategoryTag = recommendationResult?.data.sameCategory.find((item) => item.tag === tag);
+    const item = selectedItems.find((item) => item.tag === tag)
+      ?? data?.results.find((item) => item.tag === tag);
+    const selection = item ?? (sameCategoryTag
+      ? createDanbooruRecommendationSelection(sameCategoryTag, showNsfw)
+      : undefined);
+    if (!selection) return;
+    const nextItems = toggleDanbooruSelection(selectedItems, selection);
+    if (nextItems === selectedItems) {
+      setNotice(`最多可选择 ${DANBOORU_RECOMMENDATION_TAG_LIMIT} 个推荐依据，请先移除一个已选标签。`);
+      return;
+    }
+    setSelectedItems(nextItems);
+    const input = getDanbooruSelectionInput(nextItems, showNsfw);
     requestRecommendations(
-      nextTags,
-      [...new Set(nextItems.map((item) => item.category))],
-      showNsfw,
+      input.tags,
+      input.categories,
+      input.show_nsfw,
     );
   }
-  function changeNsfwSetting(nextValue: boolean) {
-    setShowNsfw(nextValue);
-    if (selectedTags.length === 0) return;
-    const nextData = result
-      ? {
-          ...applyDanbooruNsfwFilter(result.data, nextValue),
-          node: result.data.node,
-        }
-      : undefined;
-    const nextItems =
-      nextData?.results.filter((item) => selectedTags.includes(item.tag)) ?? [];
-    setSelectedTags(nextItems.map((item) => item.tag));
+  function applyNsfwSetting(nextValue: boolean) {
+    const persisted = nextValue
+      ? danbooruPreferences.enableAfterAgeConfirmation()
+      : danbooruPreferences.disable();
+    const nextItems = filterDanbooruSelection(selectedItems, nextValue);
+    if (nextItems.length < selectedItems.length)
+      setNotice("已移除成人或安全性未知的推荐依据，其他已选标签继续保留。");
+    setSelectedItems(nextItems);
+    const input = getDanbooruSelectionInput(nextItems, nextValue);
     requestRecommendations(
-      nextItems.map((item) => item.tag),
-      [...new Set(nextItems.map((item) => item.category))],
-      nextValue,
+      input.tags,
+      input.categories,
+      input.show_nsfw,
     );
+    if (!persisted)
+      setNotice("浏览器不允许保存个性化设置，本次选择仅在当前页面生效，刷新后可能恢复之前保存的设置。");
+    return persisted;
+  }
+  function changeNsfwSetting(nextValue: boolean) {
+    if (nextValue) {
+      setPendingAdultSearch(null);
+      setAgeConfirmationOpen(true);
+    } else {
+      applyNsfwSetting(false);
+    }
+  }
+  function cancelAgeConfirmation() {
+    setAgeConfirmationOpen(false);
+    setPendingAdultSearch(null);
+    if (!danbooruPreferences.disable())
+      setNotice("成人标签保持关闭，但浏览器不允许保存个性化设置。");
+  }
+  function confirmAge() {
+    const persisted = applyNsfwSetting(true);
+    setAgeConfirmationOpen(false);
+    setPendingAdultSearch(null);
+    if (pendingAdultSearch) void executeSearch(pendingAdultSearch);
+    if (!persisted)
+      setNotice("浏览器不允许保存个性化设置，本次选择仅在当前页面生效，刷新后可能恢复之前保存的设置。");
   }
   const draftChanged =
     submitted &&
-    (submitted.query !== query.trim() || submitted.show_nsfw !== showNsfw);
+    (submitted.query !== preprocessPromptQuery(query) || submitted.show_nsfw !== showNsfw);
 
   return (
     <section className="danbooru-search" aria-labelledby="danbooru-title">
@@ -578,20 +685,26 @@ export default function DanbooruSearch() {
           }}
         >
           <div className="danbooru-search-form">
-            <Input
+            {/* No native multiline component is provided by the UI library. */}
+            <textarea
+              id="danbooru-search-input"
+              className="lookup-textarea"
+              rows={3}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              size="large"
-              prefix={<SearchIcon {...icon} size={21} />}
-              placeholder="例如：白色水手服、星空下的森林、long hair"
+              placeholder="输入中文描述或粘贴 tags，例如：{long hair}, [smile], 0.7::red hair::"
               aria-label="Danbooru 搜索关键词"
               aria-describedby="danbooru-search-help"
-              maxLength={DANBOORU_QUERY_MAX_LENGTH}
-              allowClear
-              onClear={() => setQuery("")}
+              maxLength={PROMPT_SEARCH_MAX_LENGTH}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && event.nativeEvent.isComposing)
                   event.preventDefault();
+                else if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (!loading && query.trim()) void search({
+                    query: query.trim(), limit: DANBOORU_DEFAULT_LIMIT, show_nsfw: showNsfw,
+                  });
+                }
               }}
             />
             <Button
@@ -614,12 +727,17 @@ export default function DanbooruSearch() {
               <Switch
                 checked={showNsfw}
                 onChange={changeNsfwSetting}
-                disabled={loading}
+                disabled={loading || ageConfirmationOpen}
                 size="small"
                 aria-labelledby="danbooru-nsfw-label"
               />
             </div>
           </div>
+          <p className="danbooru-input-help">
+            自动去除加减权语法并合并重复标签 · 长提示词按完整 tag 分批搜索 · Enter 搜索，Shift + Enter 换行
+          </p>
+          <Button type="link" size="small" disabled={!query || loading}
+            onClick={() => setQuery("")}>清空输入</Button>
         </form>
         <div className="danbooru-attribution">
           <span>数据源：Danbooru 数据库</span>
@@ -632,7 +750,6 @@ export default function DanbooruSearch() {
           onReplay={(entry) => {
             if (loading) return;
             setQuery(entry.query);
-            setShowNsfw(entry.show_nsfw);
             void search({
               query: entry.query,
               limit: entry.limit,
@@ -649,6 +766,11 @@ export default function DanbooruSearch() {
           }}
         />
       </Card>
+      <DanbooruAgeConfirmation
+        open={ageConfirmationOpen}
+        onConfirm={confirmAge}
+        onCancel={cancelAgeConfirmation}
+      />
 
       {notice ? (
         <p className="danbooru-notice" role="status">
@@ -657,20 +779,15 @@ export default function DanbooruSearch() {
       ) : null}
       <div className="danbooru-dashboard-toolbar">
         {data && submitted ? <DanbooruSearchContext key={submitted.query} query={submitted.query} keywords={data.keywords} /> : null}
-        <p>点击卡片选择标签，展开说明查看完整内容；四个板块可独立滚动。</p>
-        {selectedResultTags.length > 0 ? (
-          <div className="danbooru-selected-tags" aria-label="推荐依据">
-            <span>推荐依据</span>
-            {selectedResultTags.map((tag) => (
-              <Tag key={tag.tag} size="small" variant="soft" color="app-teal"
-                closable onClose={() => toggleRecommendationTag(tag.tag)}>{getDanbooruDisplayName(tag)}</Tag>
-            ))}
-            <Button type="link" size="small" onClick={() => {
-              setSelectedTags([]);
-              requestRecommendations([], [], showNsfw);
-            }}>清空选择</Button>
-          </div>
-        ) : null}
+        <p>搜索结果和同类标签的卡片都可选择，换搜索词不会清空选择；最多组合 {DANBOORU_RECOMMENDATION_TAG_LIMIT} 个标签共同查找三类推荐。</p>
+        <DanbooruSelectedTags
+          items={selectedItems}
+          onRemove={toggleRecommendationTag}
+          onClear={() => {
+            setSelectedItems([]);
+            requestRecommendations([], [], showNsfw);
+          }}
+        />
       </div>
       <div className="danbooru-dashboard" aria-label="标签搜索与推荐四宫格">
         <DashboardPanel
@@ -704,11 +821,12 @@ export default function DanbooruSearch() {
         </DashboardPanel>
         <DanbooruRecommendations
           result={recommendationResult}
-          selectedTags={recommendationTags}
+          selectedTags={selectedTags}
           loading={recommendationLoading}
           error={recommendationError}
           onCopy={(text) => void copy(text)}
-          onRetry={() => requestRecommendations(recommendationTags, recommendationCategories, showNsfw)}
+          onRetry={() => requestRecommendations(recommendationInput.tags, recommendationInput.categories, showNsfw)}
+          onToggleTag={toggleRecommendationTag}
         />
       </div>
     </section>

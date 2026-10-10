@@ -25,6 +25,17 @@ function setup() {
 }
 
 describe("local Danbooru search history", () => {
+  test("records cleaned weighted searches and can replay complete long tag lists", () => {
+    const s = setup();
+    s.store.record({ ...input, query: "{long hair}, -2::artist:mignon::" });
+    expect(s.store.getSnapshot()[0].query).toBe("long hair, artist:mignon");
+    s.setTime(2000);
+    const query = Array.from({ length: 90 }, (_, index) => `{tag_${index}}`).join(", ");
+    expect(s.store.record({ ...input, query })).toBe(true);
+    const restored = createDanbooruHistoryStore(s.options).getSnapshot();
+    expect(restored[0].query).toBe(Array.from({ length: 90 }, (_, index) => `tag_${index}`).join(", "));
+    expect(restored).toHaveLength(2);
+  });
   test("persists the query and search conditions, then restores them on reload", () => {
     const s = setup();
     expect(s.store.record({ ...input, query: ` ${input.query} ` })).toBe(true);

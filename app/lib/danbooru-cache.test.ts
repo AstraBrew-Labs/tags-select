@@ -33,6 +33,66 @@ function setup() {
   };
 }
 describe("one-day Danbooru search cache", () => {
+  test("weighted and plain searches share the canonical query and one-day cache", async () => {
+    const calls: string[] = [];
+    const loader = createDanbooruLoader({
+      storage: () => null,
+      fetchSearch: async (input) => { calls.push(input.query); return danbooruFixture; },
+    });
+    await loader.load({ ...input, query: "{long_hair}, [smile], -2::artist:mignon::" });
+    expect((await loader.load({
+      ...input, query: "long_hair, smile, artist:mignon",
+    })).cached).toBe(true);
+    expect(calls).toEqual(["long_hair, smile, artist:mignon"]);
+  });
+  test("long tag lists use bounded cleaned batches, deduplicate results and cache each batch", async () => {
+    const query = Array.from({ length: 65 }, (_, index) => `{source_tag_${index}}`).join(", ");
+    const calls: string[] = [];
+    let active = 0;
+    let maxActive = 0;
+    const loader = createDanbooruLoader({
+      storage: () => null,
+      fetchSearch: async (request) => {
+        calls.push(request.query);
+        active++;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        active--;
+        return {
+          ...danbooruFixture,
+          keywords: [request.query],
+          results: [
+            { ...danbooruFixture.results[0], tag: "duplicate", final_score: 0.9 },
+            { ...danbooruFixture.results[0], tag: `unique_${calls.indexOf(request.query)}`, final_score: 0.8 },
+            { ...danbooruFixture.results[0], tag: "adult_row", nsfw: "1" },
+          ],
+        };
+      },
+    });
+    const next = await loader.load({ ...input, query });
+    expect(calls.length).toBeGreaterThan(1);
+    expect(maxActive).toBeLessThanOrEqual(2);
+    expect(calls.every((query) => query.length <= 300 && !/[{}]/.test(query))).toBe(true);
+    expect(calls.join(", ")).toBe(Array.from({ length: 65 }, (_, index) => `source_tag_${index}`).join(", "));
+    expect(next.data.results.filter((tag) => tag.tag === "duplicate")).toHaveLength(1);
+    expect(next.data.results.some((tag) => tag.tag === "adult_row")).toBe(false);
+    expect(next.data.tags_all).not.toContain("adult_row");
+    const count = calls.length;
+    expect((await loader.load({ ...input, query })).cached).toBe(true);
+    expect(calls).toHaveLength(count);
+  });
+  test("a failed batch does not return a misleading partial successful result", async () => {
+    const loader = createDanbooruLoader({
+      storage: () => null,
+      fetchSearch: async (request) => {
+        if (request.query.includes("tag_59")) throw new Error("Unavailable");
+        return danbooruFixture;
+      },
+    });
+    await expect(loader.load({
+      ...input, query: Array.from({ length: 60 }, (_, index) => `tag_${index}`).join(", "),
+    })).rejects.toThrow("Unavailable");
+  });
   test("uses a one-day TTL", () => {
     expect(DANBOORU_CACHE_TTL).toBe(24 * 60 * 60 * 1000);
   });

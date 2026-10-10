@@ -111,7 +111,7 @@ export default function PromptLookup({
           }}
         />
         <p id="lookup-input-help" className="lookup-input-help">
-          逗号或换行分隔 · 支持常见权重括号 · Ctrl / ⌘ + Enter 查找
+          逗号或换行分隔 · 自动去除权重括号及数值加减权 · Ctrl / ⌘ + Enter 查找
         </p>
         <div className="lookup-input-actions">
           <Button

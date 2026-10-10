@@ -36,6 +36,22 @@ function waitForAbort(_url: string, init: RequestInit) {
 }
 
 describe("domestic-first Danbooru proxy", () => {
+  test("cleans weight syntax at the server boundary before calling either upstream node", async () => {
+    const { fetcher, calls } = makeFetcher((url) =>
+      url === DANBOORU_NODES[0].url ? unavailable() : good(),
+    );
+    const response = await handleDanbooruSearch(request({
+      ...input, query: "{misaka_mikoto}, -2::artist:collaboration::, [funii], 0.7::jyt::, han_(hehuihuihui)",
+    }), { fetcher, apiKey: "test-secret" });
+    expect(response.status).toBe(200);
+    for (const call of calls) expect(JSON.parse(String(call.init.body)).query)
+      .toBe("misaka_mikoto, artist:collaboration, funii, jyt, han_(hehuihuihui)");
+  });
+  test("empty weight-only input never reaches the upstream API", async () => {
+    const { fetcher, calls } = makeFetcher(good);
+    expect((await handleDanbooruSearch(request({ ...input, query: "{}, []" }), { fetcher })).status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
   test("domestic success uses registration headers, no bearer, no fallback", async () => {
     const { fetcher, calls } = makeFetcher(good);
     const response = await handleDanbooruSearch(request(), {

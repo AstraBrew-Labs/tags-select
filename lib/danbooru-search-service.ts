@@ -6,6 +6,7 @@ import {
   type DanbooruSearchInput,
   type DanbooruSearchResponse,
 } from "../app/lib/danbooru-types";
+import { preprocessPromptQuery } from "../app/lib/prompt-preprocessing";
 
 // Fixed destinations: callers cannot turn this endpoint into an arbitrary proxy.
 export const DANBOORU_NODES = [
@@ -144,6 +145,8 @@ export async function handleDanbooruSearch(
       "请输入 1–300 个字符；结果数量须为 1–80 的整数。",
       400,
     );
+  input = parseDanbooruInput({ ...input, query: preprocessPromptQuery(input.query) });
+  if (!input) return errorResponse("去除加减权符号后没有有效标签，或清理后的搜索超过 300 个字符。", 400);
   try {
     const data = await searchDanbooru(input, request.signal, options);
     return Response.json(data, { headers });

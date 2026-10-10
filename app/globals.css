@@ -191,6 +191,12 @@ a:focus-visible,
   align-items: center;
   gap: 12px;
 }
+.danbooru-input-help {
+  margin-top: 8px;
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+}
 .danbooru-search-options {
   flex-wrap: wrap;
   margin-top: 16px;
@@ -297,6 +303,32 @@ a:focus-visible,
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+.danbooru-selected-tags .danbooru-selected-tag {
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.danbooru-selected-tag > span {
+  min-width: 0;
+}
+.danbooru-age-content {
+  display: grid;
+  gap: 12px;
+  line-height: 1.8;
+}
+.danbooru-age-help {
+  color: var(--animal-text-color-secondary);
+  font-size: 12px;
+}
+.danbooru-age-actions {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
 }
 .danbooru-search-context-content,
 .danbooru-tag-details-content {

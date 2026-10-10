@@ -67,6 +67,27 @@ describe("Danbooru recommendation proxy", () => {
     expect(calls.filter((url) => url.endsWith("/related"))).toHaveLength(2);
     expect(new Set(calls.map((url) => new URL(url).origin)).size).toBe(1);
   });
+  test("passes the whole cross-search combination to all three upstream requests", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const { fetcher } = fetcherFor((url, init) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return Response.json(url.endsWith("/artists") ? artists : related("combined_tag"));
+    });
+    const input = {
+      tags: ["white_serafuku", "another_character"],
+      categories: ["General", "Character"],
+      show_nsfw: false,
+    };
+    const response = await handleDanbooruRecommendations(request(input), { fetcher });
+    expect(response.status).toBe(200);
+    expect(bodies).toHaveLength(3);
+    for (const body of bodies) {
+      expect(body.tags).toEqual(input.tags);
+      expect(body.show_nsfw).toBe(false);
+    }
+    expect(bodies.filter((body) => Array.isArray(body.target_categories)))
+      .toEqual([expect.objectContaining({ target_categories: input.categories })]);
+  });
   test("falls back to international node for failed recommendation calls", async () => {
     const { fetcher, calls } = fetcherFor((url) => {
       if (url.includes("sakizuki-danboorusearchonline"))
