@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <title>NovelAI Tags 选择器 - 中文标签搜索与绘画提示词工具</title>
+  <rect width="1200" height="630" fill="#f7f8ef"/>
+  <path d="M0 18H1200" stroke="#34846c" stroke-width="36"/>
+  <g font-family="Noto Sans SC, PingFang SC, sans-serif">
+    <rect x="72" y="64" width="52" height="52" rx="12" fill="#e4f4ec"/>
+    <path d="M81 107C81 83 98 69 115 73C115 91 100 107 81 107Z" fill="#34846c"/>
+    <path d="M81 107L115 73" stroke="#185643" stroke-width="3" stroke-linecap="round"/>
+    <text x="144" y="98" font-size="26" font-weight="700" fill="#185643">YOUR LITTLE PROMPT GARDEN</text>
+    <text x="72" y="233" font-size="82" font-weight="800" fill="#244c3e">NovelAI Tags</text>
+    <text x="72" y="328" font-size="72" font-weight="800" fill="#34846c">选择器</text>
+    <text x="75" y="390" font-size="26" fill="#5d665c">中文标签搜索与绘画提示词工具</text>
+    <g transform="translate(784 158)">
+      <rect width="336" height="100" rx="8" fill="#e4f4ec"/>
+      <text x="24" y="40" font-size="22" font-weight="700" fill="#185643">长发</text>
+      <text x="24" y="74" font-size="24" fill="#34846c">long_hair</text>
+      <path d="M283 43L293 53L313 31" fill="none" stroke="#34846c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g transform="translate(820 276)">
+      <rect width="300" height="100" rx="8" fill="#f4e0df"/>
+      <text x="24" y="40" font-size="22" font-weight="700" fill="#824844">水彩</text>
+      <text x="24" y="74" font-size="24" fill="#a0625a">watercolor</text>
+    </g>
+    <g transform="translate(760 394)">
+      <rect width="360" height="100" rx="8" fill="#f5ecc9"/>
+      <text x="24" y="40" font-size="22" font-weight="700" fill="#7b6329">落日</text>
+      <text x="24" y="74" font-size="24" fill="#93793c">sunset</text>
+      <path d="M307 30H324V47M324 30L301 53" fill="none" stroke="#93793c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="75" y="465" font-size="24" font-weight="700" fill="#34846c">查找 / 组合 / 收藏 / 复制</text>
+    <path d="M72 539H1120" stroke="#dce3d6" stroke-width="2"/>
+    <text x="75" y="585" font-size="20" fill="#697367">让每一份灵感，都有迹可循。</text>
+    <text x="1120" y="585" font-size="18" text-anchor="end" fill="#697367">非官方社区辅助工具</text>
+  </g>
+</svg>

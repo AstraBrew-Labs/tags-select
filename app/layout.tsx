@@ -1,27 +1,40 @@
-import type { Metadata } from "next";
+import type { Viewport } from "next";
+import { Suspense } from "react";
 import "animal-island-ui/style";
 import "./globals.css";
 import DatasetPrefetch from "./components/dataset-prefetch";
+import { siteMetadata, siteStructuredData } from "./lib/seo";
+import { getSiteUrl } from "./lib/seo-request";
 
-export const metadata: Metadata = {
-  title: "NovelAI Tags 选择器 · 让灵感慢慢生长",
-  description:
-    "帮助你快速找到需要的 NovelAI Tags。选择标签生成提示词，粘贴已有 tags 逐项查找中文与分类，收藏常用词并一键复制。",
-  applicationName: "NovelAI Tags 选择器",
-  openGraph: {
-    title: "NovelAI Tags 选择器",
-    description: "帮助你快速找到需要的 NovelAI Tags",
-    locale: "zh_CN",
-    type: "website",
-  },
+export async function generateMetadata() {
+  return siteMetadata(await getSiteUrl());
+}
+export const viewport: Viewport = {
+  themeColor: "#f7f8ef",
 };
+
+async function StructuredData() {
+  const siteUrl = await getSiteUrl();
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{
+        __html: JSON.stringify(siteStructuredData(siteUrl)).replace(/</g, "\\u003c"),
+      }}
+    />
+  );
+}
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="zh-CN">
       {/* Extensions may inject attributes such as cz-shortcut-listen before hydration.
           Suppress only body-level differences; child components remain checked. */}
-      <body suppressHydrationWarning><DatasetPrefetch />{children}</body>
+      <body suppressHydrationWarning>
+        <Suspense fallback={null}><StructuredData /></Suspense>
+        <DatasetPrefetch />
+        {children}
+      </body>
     </html>
   );
 }

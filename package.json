@@ -6,6 +6,7 @@
     "dev": "bun run data:build && next dev",
     "build": "bun run data:build && prisma generate && next build",
     "data:build": "bun run scripts/build-local-catalogs.ts",
+    "seo:build": "bun run scripts/build-seo-assets.ts",
     "start": "next start",
     "lint": "eslint",
     "test": "bun test",
@@ -47,6 +48,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "prisma": "7.10.0",
+    "sharp": "0.35.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   },

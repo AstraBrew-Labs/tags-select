@@ -276,6 +276,17 @@ DANBOORU_IMAGE_PROXY_URL="http://127.0.0.1:7892"
 部署环境没有本地代理时不要照搬 `127.0.0.1`，能直连则不设置此变量。
 超时返回 504，其他上游请求失败返回 502，两者都不会写入一周的无图缓存。
 
+## SEO 与分享素材
+
+- 统一元数据在 `app/lib/seo.ts`：页面标题、摘要、canonical、Open Graph、Twitter 大图卡片及 `WebSite` / `WebApplication` JSON-LD。结构化数据不虚构评分，不给当前无独立 URL 的搜索界面添加 SearchAction。
+- SEO 不写死域名或本地端口：未设置 `SITE_URL` 时，canonical、分享图绝对 URL、JSON-LD 和 sitemap 跟随当前请求的 Host 与协议。本地 `bun run dev` 始终使用实际访问地址，即使配置了生产 `SITE_URL`，也可用 localhost、其他端口或局域网地址检查 OG 图。
+- 正式部署可设置 `SITE_URL="https://你的正式域名"`，在构建和运行环境保持一致，以固定 canonical 并启用静态 SEO 输出；不设置时按请求生成 SEO 信息，首页静态首屏仍保留。反向代理需保留原始 Host 并传递 `x-forwarded-proto: http` 或 `https`，不信任 `x-forwarded-host`；代理不能保留 Host 时请配置 `SITE_URL`。不要把预览域名设置为正式 canonical。
+- `/robots.txt` 允许网页和图片资源抓取，排除 `/api/`；`/sitemap.xml` 只列真实首页，不把客户端 tabs 或搜索条件当成独立页面，也不虚构更新时间。
+- OG 图为 `public/og/novelai-tags.png`，1200×630 静态 PNG，OG 与 Twitter 共用。源图 `assets/seo/og.svg` 由站点叶片标识、中英文标签元素和中文标题合成，不包含远程例图，不依赖实时接口。
+- 图标包含自适应 SVG、ICO 内嵌 16/32/48/64px、48px PNG、180px Apple Touch Icon、192/512px 应用图标和安全区内的独立 maskable 图标。Next.js 文件约定自动输出 favicon、SVG、PNG、Apple 图标链接，不与手动 icons 元数据混用；manifest 不声称具备离线功能。
+- 素材已作为静态项目文件保存，无需上线时生成；更新源图或标识后运行 `bun run seo:build`。合成使用 Sharp，重新生成 OG 图的机器需要有 Noto Sans SC、PingFang SC 或可用的中文字体，运行后检查中文显示。
+- 上线后可向搜索平台提交 sitemap 并检查 canonical / favicon / OG 图片是否公开可访问；这些配置不保证收录或排名，也不代替独立可索引内容页。
+
 ## 开发检查
 
 ```sh

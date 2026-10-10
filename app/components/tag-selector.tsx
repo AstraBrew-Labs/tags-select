@@ -306,7 +306,7 @@ export default function TagSelector() {
                 <span />
               </div>
               <h1 id="hero-title">
-                让每一份灵感，<span>都有迹可循。</span>
+                NovelAI Tags <span>选择器</span>
               </h1>
               <p>
                 帮助你快速找到需要的 NovelAI Tags{" "}

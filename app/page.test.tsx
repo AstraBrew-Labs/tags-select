@@ -41,4 +41,9 @@ describe("homepage server render", () => {
     expect(html).toContain("Tags 的例图由 Danbooru 提供");
     expect(html).toContain("可能与 tag 本身的意思并没有关系，仅供参考");
   });
+  test("keeps the product heading in the static shell while SEO resolves the request origin", () => {
+    const html = renderToStaticMarkup(<Home />);
+    expect(html).toMatch(/<h1[^>]*>NovelAI Tags <span>选择器<\/span><\/h1>/);
+    expect(html).not.toContain("https://tag-select.astrabrew.cn");
+  });
 });
