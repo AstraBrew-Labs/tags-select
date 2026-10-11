@@ -11,17 +11,19 @@ Read /llm.md for the current API contract. The service is public and read-only; 
 
 ## Combined lookup
 
-- Prefer MCP tool `search_all_tags`, or GET `/api/ai/tags?query=<URL-encoded text>`. One call returns the local dictionary rows first, then Danbooru semantic rows, merged and de-duplicated by tag.
-- `source` defaults to `all`; use `local` for a zero-remote-quota lookup or `danbooru` to skip the local index. `limit` is per source (1–50), so a combined page can hold up to twice that.
-- Every row carries `source` (`local` or `danbooru`) and `match` (exact, alias, prefix, contains, semantic). Exact and alias local matches outrank semantic suggestions.
-- `counts` shows how many rows each source contributed; `unavailable` lists any part that failed (`danbooru`, `recommendations`). In the combined mode a Danbooru outage keeps the local rows instead of failing the request.
+- Prefer MCP tool `search_all_tags`, or GET `/api/ai/tags?query=<URL-encoded text>`. One call returns the local dictionary rows first, then Danbooru semantic rows.
+- `source` defaults to `all` and only decides which indexes produce rows: `all` combines both, `local` returns the dictionary alone, `danbooru` skips the local index. `limit` is per source (1–50), so a combined page can hold up to twice that.
+- When both indexes hold a tag the row is merged: the curated local row is the base and Danbooru only fills what is missing, so `source` becomes `local+danbooru` and `filled_fields` lists what Danbooru supplied — for example `["note"]` when the local entry has no note but Danbooru has a wiki. Local values are never overwritten.
+- Every row carries `source` (`local`, `danbooru` or `local+danbooru`) and `match` (exact, alias, prefix, contains, semantic). Exact and alias local matches outrank semantic suggestions.
+- `counts` reports `local`, `danbooru` and `merged`; `local` already includes the merged rows, so local + danbooru = total. `unavailable` lists any part that failed (`danbooru`, `recommendations`). In the combined mode a Danbooru outage keeps the local rows instead of failing the request.
 - `has_more` refers to local pagination only; Danbooru rows cannot be paged (`offset` must be 0 with `source=danbooru`).
 - Use short concepts rather than a whole paragraph. Split independent concepts into separate queries. Copy the returned `tag` spelling, including character/copyright parentheses. Do not translate proper names or invent an English tag from a Chinese label.
 
 ## Recommendations
 
-- `recommend=1` (the default) also returns `recommendations`: `artists` (co-occurring artists with `cooc_count` and `post_count`), `sameCategory` and `related` tags, all derived from `basedOn` — up to 8 of the top merged tags.
-- `recommendations` is `null` when no recommendation was performed (`recommend=0`, or `source=local`). An object with an empty `basedOn` means there was no usable basis; empty buckets plus `unavailable: ["recommendations"]` mean the public pool could not answer.
+- `recommend=1` (the default) also returns `recommendations` for every source, including `local`: `artists` (co-occurring artists with `cooc_count` and `post_count`), `sameCategory` and `related` tags, all derived from `basedOn` — up to 8 of the top merged tags.
+- Recommendations always use the public Danbooru pool, so `source=local&recommend=0` is the only pairing that costs no remote quota at all.
+- `recommendations` is `null` only when no recommendation was performed (`recommend=0`). An object with an empty `basedOn` means there was no usable basis; empty buckets plus `unavailable: ["recommendations"]` mean the public pool could not answer.
 - Use recommendations to expand a prompt vocabulary, never as an authoritative translation. Do not retry them in a loop.
 
 ## Inline example images

@@ -64,23 +64,32 @@ describe("read-only AI tag lookup", () => {
       { query: "x", url: "https://evil.test" }, { query: "x", show_nsfw: true },
     ]) expect(() => parseAiSearchInput(input)).toThrow();
   });
-  test("merges the local dictionary and Danbooru rows into one ranked list", async () => {
+  test("completes matching local rows with Danbooru data instead of dropping them", async () => {
     const search = createAiTagSearch({
       loadIndex: async () => index,
       remoteSearch: async () => ({
         ...remoteData,
         results: [
-          { ...remoteData.results[0], tag: "misaka_mikoto", category: "Character" },
+          {
+            ...remoteData.results[0], tag: "misaka_mikoto", category: "Character",
+            cn_name: "御坂美琴", alias_from: "御坂", wiki: "御坂美琴的 wiki 说明",
+          },
           { ...remoteData.results[0], tag: "white_serafuku", category: "General" },
         ],
       }),
     });
     const result = await search(parseAiSearchInput({ query: "misaka_mikoto", images: 0, recommend: false }), signal());
-    // Local rows come first and the duplicate remote row is dropped.
+    // The local row keeps its position and identity; Danbooru only fills blanks.
     expect(result.results.map((item) => [item.tag, item.source])).toEqual([
-      ["misaka_mikoto", "local"], ["white_serafuku", "danbooru"],
+      ["misaka_mikoto", "local+danbooru"], ["white_serafuku", "danbooru"],
     ]);
-    expect(result.counts).toEqual({ local: 1, danbooru: 1 });
+    expect(result.results[0]).toMatchObject({
+      source: "local+danbooru", filled_fields: ["note", "aliases"],
+      note: "御坂美琴的 wiki 说明", zh: "御坂美琴", aliases: ["炮姐", "御坂"],
+      match: "exact", category: "characters", category_name: "角色", group: "某科学",
+    });
+    expect(result.results[1].filled_fields).toEqual([]);
+    expect(result.counts).toEqual({ local: 1, danbooru: 1, merged: 1 });
     expect(result.total).toBe(2);
     expect(result.unavailable).toEqual([]);
   });
@@ -91,7 +100,7 @@ describe("read-only AI tag lookup", () => {
     });
     const combined = await search(parseAiSearchInput({ query: "misaka_mikoto", images: 0 }), signal());
     expect(combined.results.map((item) => item.tag)).toEqual(["misaka_mikoto"]);
-    expect(combined.counts).toEqual({ local: 1, danbooru: 0 });
+    expect(combined.counts).toEqual({ local: 1, danbooru: 0, merged: 0 });
     expect(combined.unavailable).toEqual(["danbooru"]);
     // An explicit Danbooru-only request still reports the failure to the caller.
     await expect(search(parseAiSearchInput({ query: "x", source: "danbooru" }), signal()))
@@ -109,7 +118,7 @@ describe("read-only AI tag lookup", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
     const body = await response.json();
     expect(body.results[0].zh).toBe("御坂美琴");
-    expect(body.counts).toEqual({ local: 1, danbooru: 0 });
+    expect(body.counts).toEqual({ local: 1, danbooru: 0, merged: 0 });
     expect(calls).toBe(0);
   });
   test("HTTP query validation rejects duplicates, malformed numbers and unknown keys", async () => {
@@ -197,15 +206,32 @@ describe("merged recommendations", () => {
     });
     expect(result.unavailable).toEqual(["recommendations"]);
   });
-  test("recommend=0 and local-only lookups never spend remote quota", async () => {
+  test("recommend=0 skips the recommendation service entirely", async () => {
     let calls = 0;
     const search = createAiTagSearch({
       loadIndex: async () => index, remoteSearch: async () => remoteData,
       fetchRecommendations: async () => { calls++; return recommendationData; },
     });
-    expect((await search(parseAiSearchInput({ query: "misaka_mikoto", recommend: false }), signal())).recommendations).toBeNull();
-    expect((await search(parseAiSearchInput({ query: "misaka_mikoto", source: "local" }), signal())).recommendations).toBeNull();
+    const result = await search(parseAiSearchInput({ query: "misaka_mikoto", recommend: false }), signal());
+    expect(result.recommendations).toBeNull();
     expect(calls).toBe(0);
+  });
+  test("local-only lookups still recommend from the merged tags using the mapped category", async () => {
+    const asked: Array<{ tags: string[]; categories: string[] }> = [];
+    const search = createAiTagSearch({
+      loadIndex: async () => index, remoteSearch: async () => remoteData,
+      fetchRecommendations: async (input) => { asked.push(input); return recommendationData; },
+    });
+    const result = await search(parseAiSearchInput({ query: "misaka_mikoto", source: "local", images: 0 }), signal());
+    // characters maps onto Danbooru's Character so "same category" stays usable.
+    expect(asked).toEqual([{ tags: ["misaka_mikoto"], categories: ["Character"] }]);
+    expect(result.recommendations).toEqual({
+      basedOn: ["misaka_mikoto"],
+      artists: recommendationData.artists,
+      sameCategory: recommendationData.sameCategory,
+      related: recommendationData.related,
+    });
+    expect(result.counts).toEqual({ local: 1, danbooru: 0, merged: 0 });
   });
 });
 

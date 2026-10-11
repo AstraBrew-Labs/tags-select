@@ -42,22 +42,26 @@ describe("portable AI documents and download URLs", () => {
     const result = response.schema.properties.results.items;
     expect(result.required).toContain("images");
     expect(result.required).toContain("source");
-    expect(result.properties.source.enum).toEqual(["local", "danbooru"]);
+    expect(result.required).toContain("filled_fields");
+    expect(result.properties.source.enum).toEqual(["local", "danbooru", "local+danbooru"]);
     expect(Object.keys(result.properties.images.properties)).toEqual(["preview", "sample", "original"]);
     expect(response.schema.required).toEqual(expect.arrayContaining(["counts", "unavailable", "recommendations", "recommend"]));
+    expect(response.schema.properties.counts.required).toEqual(["local", "danbooru", "merged"]);
     expect(response.schema.properties.unavailable.items.enum).toEqual(["danbooru", "recommendations"]);
     expect(Object.keys(response.schema.properties.recommendations.properties)).toEqual(["basedOn", "artists", "sameCategory", "related"]);
-    expect(spec.info.version).toBe("1.3.0");
+    expect(spec.info.version).toBe("1.4.0");
     expect(response.example).toMatchObject({
-      images: 8, recommend: true, source: "all", counts: { local: 1, danbooru: 1 }, unavailable: [],
+      images: 8, recommend: true, source: "all",
+      counts: { local: 1, danbooru: 1, merged: 1 }, unavailable: [],
     });
-    expect(response.example.results.map((item) => item.source)).toEqual(["local", "danbooru"]);
+    expect(response.example.results.map((item) => item.source)).toEqual(["local+danbooru", "danbooru"]);
+    expect(response.example.results[0].filled_fields).toEqual(["note"]);
     expect(Object.keys(response.example.results[0].images)).toEqual(["preview", "sample", "original"]);
     expect(response.example.recommendations.basedOn).toHaveLength(2);
   });
   test("documents the merged search, recommendations and inline images with no separate endpoints", () => {
     for (const document of [buildAiDocument("markdown", "https://api.test"), buildAiDocument("text", "https://api.test"), buildAiSkill("https://api.test")]) {
-      for (const marker of ["images", "preview", "sample", "recommendations", "search_all_tags", "unavailable"]) {
+      for (const marker of ["images", "preview", "sample", "recommendations", "search_all_tags", "unavailable", "local+danbooru", "filled_fields"]) {
         expect(document).toContain(marker);
       }
       expect(document).not.toContain("/api/ai/images");

@@ -18,6 +18,17 @@ export const AI_REMOTE_LIMIT_PER_MINUTE = 20;
 export const AI_REMOTE_MAX_CONCURRENCY = 2;
 /** Categories the Danbooru recommendation service accepts as a filter. */
 export const AI_DANBOORU_CATEGORIES = ["General", "Artist", "Copyright", "Character", "Meta"] as const;
+/**
+ * The local dictionary uses its own taxonomy, so a local-only match gets a
+ * usable "same category" bucket by mapping the few categories that have a
+ * Danbooru equivalent; everything else is Danbooru's own catch-all.
+ */
+const LOCAL_SOURCE_CATEGORIES: Record<string, string> = {
+  characters: "Character",
+  Illustrator: "Artist",
+};
+const localDanbooruCategory = (category: string) =>
+  LOCAL_SOURCE_CATEGORIES[category] ?? "General";
 
 export type AiSearchSource = "all" | "local" | "danbooru";
 export type AiSearchInput = {
@@ -39,8 +50,13 @@ export type AiTagResult = {
   group: string;
   note: string | null;
   match: "exact" | "alias" | "prefix" | "contains" | "semantic";
-  /** Which index produced this row; merged responses carry both values. */
-  source: "local" | "danbooru";
+  /**
+   * Where the row came from. `local+danbooru` means both indexes held the tag
+   * and the local row was completed with Danbooru data.
+   */
+  source: "local" | "danbooru" | "local+danbooru";
+  /** Fields the local row was missing and Danbooru supplied, e.g. ["note"]; empty otherwise. */
+  filled_fields: string[];
   /** Inline official Danbooru example image sizes; null when none was attached. */
   images: DanbooruImageSizes | null;
 };
@@ -61,8 +77,8 @@ export type AiUnavailable = "danbooru" | "recommendations";
 export type AiSearchResult = AiSearchInput & {
   total: number;
   has_more: boolean;
-  /** How many merged rows each source contributed; the two add up to total. */
-  counts: { local: number; danbooru: number };
+  /** Rows each source contributed: `local` includes the merged rows, so local + danbooru = total. */
+  counts: { local: number; danbooru: number; merged: number };
   unavailable: AiUnavailable[];
   results: AiTagResult[];
   recommendations: AiRecommendations | null;
@@ -122,7 +138,7 @@ export function createAiTagIndex(catalog: CatalogResponse) {
       aliases: tag.aliases, category: tag.categoryId,
       category_name: categories.get(tag.categoryId) ?? tag.categoryId,
       group: groups.get(tag.groupId) ?? "", note: tag.note,
-      source: "local" as const, images: null,
+      source: "local" as const, filled_fields: [], images: null,
     },
     en: normalize(tag.en), zh: normalize(tag.zh), aliases: tag.aliases.map(normalize),
   }));
@@ -171,6 +187,48 @@ export function recommendationTags(results: readonly AiTagResult[], limit = DANB
   return tags;
 }
 
+/**
+ * The local dictionary is the curated base (id, Chinese name, taxonomy, match
+ * quality); Danbooru only fills what the local row lacks, so a tag with no
+ * local note but a Danbooru wiki entry still carries that note.
+ */
+export function mergeDanbooruSupplement(base: AiTagResult, supplement: AiTagResult): AiTagResult {
+  const note = base.note?.trim() ? base.note : supplement.note?.trim() ? supplement.note : null;
+  const zh = base.zh.trim() ? base.zh : supplement.zh.trim();
+  const aliases = [...new Set([...base.aliases, ...supplement.aliases])];
+  const filled_fields: string[] = [];
+  if (note && !base.note?.trim()) filled_fields.push("note");
+  if (zh && !base.zh.trim()) filled_fields.push("zh");
+  if (aliases.length > base.aliases.length) filled_fields.push("aliases");
+  return { ...base, zh, note, aliases, source: "local+danbooru", filled_fields };
+}
+
+/**
+ * Merges the two ranked pages: local rows keep their position (completed with
+ * Danbooru data when the tag exists there), then the remaining Danbooru rows
+ * are appended in their own relevance order.
+ */
+export function mergeSearchResults(local: readonly AiTagResult[], remote: readonly AiTagResult[]) {
+  const remoteByKey = new Map<string, AiTagResult>();
+  for (const row of remote) {
+    const key = mergeKey(row.tag);
+    if (!remoteByKey.has(key)) remoteByKey.set(key, row);
+  }
+  let merged = 0;
+  const results = local.map((row) => {
+    const supplement = remoteByKey.get(mergeKey(row.tag));
+    if (!supplement) return row;
+    merged += 1;
+    return mergeDanbooruSupplement(row, supplement);
+  });
+  const localKeys = new Set(local.map((row) => mergeKey(row.tag)));
+  const extra = remote.filter((row) => !localKeys.has(mergeKey(row.tag)));
+  return {
+    results: [...results, ...extra],
+    counts: { local: local.length, danbooru: extra.length, merged },
+  };
+}
+
 export function createAiTagSearch({
   loadIndex, remoteSearch, fetchRecommendations,
   enrichImages = async (results) => results.map((item) => item.images), now = Date.now,
@@ -205,7 +263,8 @@ export function createAiTagSearch({
           id: item.tag, tag: normalizePromptTagName(item.tag), zh: item.cn_name,
           aliases: item.alias_from ? [item.alias_from] : [],
           category: item.category, category_name: item.category, group: "",
-          note: item.wiki || null, match: "semantic", source: "danbooru", images: null,
+          note: item.wiki || null, match: "semantic", source: "danbooru",
+          filled_fields: [], images: null,
         }));
         if (cache.size >= 100) cache.delete(cache.keys().next().value!);
         cache.set(key, { results: rows, expiresAt: now() + AI_REMOTE_CACHE_TTL });
@@ -235,24 +294,21 @@ export function createAiTagSearch({
 
     const local = localPage?.results ?? [];
     const remote = remoteRows ?? [];
-    const seen = new Set(local.map((item) => mergeKey(item.tag)));
-    const extra = remote.filter((item) => {
-      const key = mergeKey(item.tag);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    const merged = [...local, ...extra];
-    const counts = { local: local.length, danbooru: extra.length };
+    const { results: merged, counts } = mergeSearchResults(local, remote);
 
     const basedOn = recommendationTags(merged);
-    const categories = [...new Set(remote.map((item) => item.category))]
-      .filter((category) => (AI_DANBOORU_CATEGORIES as readonly string[]).includes(category))
-      .slice(0, AI_DANBOORU_CATEGORIES.length);
+    // Real Danbooru categories win; a local-only match falls back to the mapped
+    // local taxonomy so "same category" is still meaningful without a remote hit.
+    const remoteCategories = [...new Set(remote.map((item) => item.category))]
+      .filter((category) => (AI_DANBOORU_CATEGORIES as readonly string[]).includes(category));
+    const categories = (remoteCategories.length
+      ? remoteCategories
+      : [...new Set(local.map((item) => localDanbooruCategory(item.category)))]
+    ).slice(0, AI_DANBOORU_CATEGORIES.length);
     const recommendationJob = (async (): Promise<AiRecommendations | null> => {
-      // null means no recommendation was performed: switched off, a local-only
-      // query, or a deployment without the recommendation service wired in.
-      if (!input.recommend || input.source === "local" || !fetchRecommendations) return null;
+      // null means no recommendation was performed: switched off, or a
+      // deployment without the recommendation service wired in.
+      if (!input.recommend || !fetchRecommendations) return null;
       if (basedOn.length === 0) {
         return { basedOn, artists: [], sameCategory: [], related: [] };
       }

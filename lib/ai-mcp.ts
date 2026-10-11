@@ -34,10 +34,11 @@ export function createAiMcpServer(origin: string, search: Search, signal: AbortS
   }, (input) => run({ ...input, source: "all" }));
   server.registerTool("search_tags", {
     title: "本地 Tags 中英互查",
-    description: "Local-only dictionary lookup by English tag, Chinese meaning or alias. Exact matches first. Zero remote quota and no database query; use search_all_tags when semantic matches or recommendations are needed.",
+    description: "Local-only dictionary lookup by English tag, Chinese meaning or alias. Exact matches first. Stays at zero remote quota (no recommendations, which need Danbooru); use search_all_tags for semantic matches plus recommendations.",
     inputSchema: z.object({ query, direction, limit, offset: z.number().int().min(0).max(10_000).default(0), images }).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, (input) => run({ ...input, source: "local" }));
+    // Recommendations always need the public Danbooru pool, so this tool opts out.
+  }, (input) => run({ ...input, source: "local", recommend: false }));
   server.registerTool("search_danbooru_tags", {
     title: "Danbooru 公共语义搜索",
     description: "Explicit Danbooru-only semantic search using anonymous shared quota only, never a private key. Successes cached for one day. May be rate limited; prefer search_all_tags.",

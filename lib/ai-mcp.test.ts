@@ -49,7 +49,8 @@ describe("real read-only MCP protocol", () => {
       expect(calls[0].images).toBe(0);
       expect(calls[2].images).toBe(AI_TAG_IMAGE_DEFAULT);
       expect(calls[0].recommend).toBe(false);
-      expect(calls[1].recommend).toBe(true);
+      // The local-only tool opts out of recommendations to stay at zero quota.
+      expect(calls[1].recommend).toBe(false);
       const { resources } = await client.listResources();
       expect(resources).toHaveLength(2);
       const resource = await client.readResource({ uri: resources[0].uri });
