@@ -28,9 +28,14 @@ const enrichImages = createAiTagImageEnricher({
 
 // Recommendations go through the same anonymous public pool as the semantic
 // search: no API key, no site registration headers, never a private fallback.
+// `partial` keeps whichever bucket answered, so one slow or rejected sub-request
+// cannot blank artists, same-category and related all at once. The tighter
+// per-node timeouts bound the worst case for an interactive AI request; the
+// same-site page keeps its own, longer budget.
 const recommendations = createAiRecommendations({
   fetchRecommendations: (input, signal) => fetchDanbooruRecommendations(
-    { ...input, show_nsfw: false }, signal, { quota: "public" },
+    { ...input, show_nsfw: false }, signal,
+    { quota: "public", partial: true, timeouts: [10_000, 15_000] },
   ),
 });
 

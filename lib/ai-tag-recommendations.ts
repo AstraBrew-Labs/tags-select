@@ -3,6 +3,7 @@ import type { DanbooruRecommendationData } from "../app/lib/danbooru-types";
 export const AI_RECOMMENDATION_CACHE_TTL = 24 * 60 * 60_000;
 export const AI_RECOMMENDATION_LIMIT_PER_MINUTE = 20;
 export const AI_RECOMMENDATION_MAX_CONCURRENCY = 2;
+/** Safety net covering the per-node timeouts plus an international fallback. */
 export const AI_RECOMMENDATION_TIMEOUT_MS = 30_000;
 const CACHE_MAX_ENTRIES = 100;
 

@@ -88,6 +88,49 @@ describe("Danbooru recommendation proxy", () => {
     expect(bodies.filter((body) => Array.isArray(body.target_categories)))
       .toEqual([expect.objectContaining({ target_categories: input.categories })]);
   });
+  test("partial mode keeps the buckets that answered when a sibling fails", async () => {
+    const { fetcher } = fetcherFor((url, init) => {
+      if (url.endsWith("/artists")) return new Response("busy", { status: 503 });
+      const body = JSON.parse(String(init.body));
+      const scoped = Array.isArray(body.target_categories);
+      return Response.json(related(scoped ? "same_tag" : "broad_tag", scoped ? "General" : "Character"));
+    });
+    const response = await handleDanbooruRecommendations(request(validInput), {
+      fetcher, partial: true,
+    });
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    // Artists is empty but both related buckets survive the failed sibling.
+    expect(data.artists).toEqual([]);
+    expect(data.sameCategory.map((item: { tag: string }) => item.tag)).toEqual(["same_tag"]);
+    expect(data.related.map((item: { tag: string }) => item.tag)).toEqual(["broad_tag"]);
+    expect(data.nodes.related).toBe("domestic");
+  });
+  test("partial mode still fails when every bucket fails", async () => {
+    const { fetcher } = fetcherFor(() => new Response("busy", { status: 503 }));
+    const response = await handleDanbooruRecommendations(request(validInput), {
+      fetcher, partial: true,
+    });
+    expect(response.status).toBe(503);
+  });
+  test("drops malformed rows instead of voiding the whole bucket", async () => {
+    const { fetcher } = fetcherFor((url) => {
+      if (url.endsWith("/artists")) return Response.json({
+        results: [
+          { artist: "good_artist", cooc_count: 3, post_count: 9, sources: ["x"], top_tags: [] },
+          { artist: "float_count", cooc_count: 1.5, post_count: 9, sources: ["x"], top_tags: [] },
+          { post_count: 9, sources: ["x"], top_tags: [] },
+          "not-an-object",
+        ],
+      });
+      return Response.json(related("kept"));
+    });
+    const response = await handleDanbooruRecommendations(request(validInput), { fetcher });
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.artists.map((item: { artist: string }) => item.artist)).toEqual(["good_artist"]);
+    expect(data.sameCategory.map((item: { tag: string }) => item.tag)).toEqual(["kept"]);
+  });
   test("falls back to international node for failed recommendation calls", async () => {
     const { fetcher, calls } = fetcherFor((url) => {
       if (url.includes("sakizuki-danboorusearchonline"))

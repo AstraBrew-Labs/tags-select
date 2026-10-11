@@ -3,7 +3,9 @@ import {
   DANBOORU_SERVICE_ERROR,
   parseDanbooruArtists,
   parseDanbooruRelated,
+  type DanbooruArtistRecommendation,
   type DanbooruRecommendationData,
+  type DanbooruRelatedRecommendation,
 } from "../app/lib/danbooru-types";
 
 const NODES = [
@@ -39,6 +41,13 @@ type Options = {
   apiKey?: string;
   /** AI callers use only the anonymous shared pool, never site credentials. */
   quota?: "site" | "public";
+  /**
+   * Keep the buckets that answered when a sibling request fails. The AI search
+   * has no error channel for recommendations, so a single slow or rejected
+   * sub-request must not blank artists, same-category and related at once.
+   * The same-site page keeps the strict mode and shows one error to retry.
+   */
+  partial?: boolean;
   fetcher?: typeof fetch;
   timeouts?: readonly [number, number];
 };
@@ -133,7 +142,8 @@ async function requestWithFallback<T>(
 
 /**
  * Shared by the same-site route and the read-only AI search. The AI path passes
- * `quota: "public"` so it never sends the site's registration headers or key.
+ * `quota: "public"` so it never sends the site's registration headers or key,
+ * plus `partial: true` so a failing bucket cannot empty the other two.
  */
 export async function fetchDanbooruRecommendations(
   input: { tags: string[]; categories: string[]; show_nsfw: boolean },
@@ -141,48 +151,60 @@ export async function fetchDanbooruRecommendations(
   options: Options,
 ): Promise<DanbooruRecommendationData> {
   const common = { tags: input.tags, show_nsfw: input.show_nsfw };
-  const sameCategoryBody = {
-    ...common,
-    limit: 24,
-    target_categories: input.categories.length ? input.categories : null,
-  };
-  const [artists, sameCategory, related] = await Promise.all([
-    requestWithFallback(
+  // Without a category filter the two related calls would return the same rows,
+  // so the filtered one is skipped entirely instead of being discarded later.
+  const filtered = input.categories.length > 0;
+  const attempts = [
+    () => requestWithFallback(
       "/artists",
       { ...common, limit: 12, min_cooc: 3 },
       parseDanbooruArtists,
       requestSignal,
       options,
     ),
-    requestWithFallback(
+    ...(filtered ? [() => requestWithFallback(
       "/related",
-      sameCategoryBody,
+      { ...common, limit: 24, target_categories: input.categories },
       parseDanbooruRelated,
       requestSignal,
       options,
-    ),
-    requestWithFallback(
+    )] : []),
+    () => requestWithFallback(
       "/related",
       { ...common, limit: 24, target_categories: null },
       parseDanbooruRelated,
       requestSignal,
       options,
     ),
-  ]);
-  // Without a category filter both related calls return the same rows; keeping
-  // the cross-category copy only in `related` avoids a duplicated payload.
-  const sameCategoryRows = input.categories.length ? sameCategory.data : [];
+  ];
+  const settled = await Promise.allSettled(attempts.map((run) => run()));
+  const rejected = settled.filter(
+    (item): item is PromiseRejectedResult => item.status === "rejected",
+  );
+  // Nothing usable at all, or a caller that wants a hard failure: propagate so
+  // the same-site page keeps its 503/504 retry, and the AI search can report
+  // `unavailable: ["recommendations"]` instead of pretending there is no data.
+  if (rejected.length > 0 && (rejected.length === settled.length || !options.partial))
+    throw rejected[0].reason;
+
+  const rows = <T>(index: number): T[] => {
+    const item = settled[index];
+    return item.status === "fulfilled" ? (item.value.data as T[]) : [];
+  };
+  const artists = rows<DanbooruArtistRecommendation>(0);
+  const sameCategory = filtered ? rows<DanbooruRelatedRecommendation>(1) : [];
+  const related = rows<DanbooruRelatedRecommendation>(filtered ? 2 : 1);
+  const served = settled.reduce<"domestic" | "international">(
+    (node, item) => (item.status === "fulfilled" ? item.value.node : node),
+    "domestic",
+  );
   return {
-    artists: artists.data,
-    sameCategory: sameCategoryRows,
-    related: related.data.filter(
-      (item) => !sameCategoryRows.some((same) => same.tag === item.tag),
+    artists,
+    sameCategory,
+    related: related.filter(
+      (item) => !sameCategory.some((same) => same.tag === item.tag),
     ),
-    nodes: {
-      artists: artists.node,
-      sameCategory: sameCategory.node,
-      related: related.node,
-    },
+    nodes: { artists: served, sameCategory: served, related: served },
   };
 }
 

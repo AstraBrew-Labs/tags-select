@@ -175,6 +175,8 @@ export function parseDanbooruArtists(
     return null;
   const results: DanbooruArtistRecommendation[] = [];
   for (const item of value.results) {
+    // Skip malformed rows instead of voiding the whole bucket: one bad entry in
+    // a 24-row list must not hide the other 23 recommendations.
     if (
       !isRecord(item) ||
       typeof item.artist !== "string" ||
@@ -184,7 +186,7 @@ export function parseDanbooruArtists(
       !isStrings(item.sources) ||
       !isStrings(item.top_tags)
     )
-      return null;
+      continue;
     results.push({
       artist: item.artist,
       cooc_count: item.cooc_count,
@@ -212,7 +214,7 @@ export function parseDanbooruRelated(
       !isStrings(item.sources) ||
       (item.wiki !== undefined && typeof item.wiki !== "string")
     )
-      return null;
+      continue;
     results.push({
       tag: item.tag,
       cn_name: item.cn_name,
