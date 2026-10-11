@@ -15,4 +15,11 @@ describe("AI integration workspace", () => {
     }
     expect(html).not.toContain("https://tag-select.astrabrew.cn");
   });
+  test("links the prompt-format specification endpoint next to the tag API and MCP", () => {
+    const html = renderToStaticMarkup(<AiSearch />);
+    expect(html).toContain("/api/ai/tags");
+    expect(html).toContain("/api/ai/mcp");
+    expect(html).toContain("/api/ai/formats");
+    expect(html).toContain("提示词格式规范");
+  });
 });

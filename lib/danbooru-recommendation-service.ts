@@ -37,6 +37,8 @@ type RecommendationInput = {
 };
 type Options = {
   apiKey?: string;
+  /** AI callers use only the anonymous shared pool, never site credentials. */
+  quota?: "site" | "public";
   fetcher?: typeof fetch;
   timeouts?: readonly [number, number];
 };
@@ -87,12 +89,12 @@ async function requestWithFallback<T>(
   body: Record<string, unknown>,
   parse: (value: unknown) => T | null,
   requestSignal: AbortSignal,
-  { apiKey, fetcher = fetch, timeouts }: Options,
+  { apiKey, quota = "site", fetcher = fetch, timeouts }: Options,
 ): Promise<ParsedRecommendation<T>> {
   let timedOut = false;
   for (const [index, node] of NODES.entries()) {
     requestSignal.throwIfAborted();
-    if (node.name === "international" && !apiKey?.trim()) continue;
+    if (node.name === "international" && quota !== "public" && !apiKey?.trim()) continue;
     const timeout = AbortSignal.timeout(timeouts?.[index] ?? node.timeoutMs);
     const signal = AbortSignal.any([requestSignal, timeout]);
     try {
@@ -103,9 +105,11 @@ async function requestWithFallback<T>(
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
-          "X-DanbooruSearch-Client": "tag-select-astrabrew",
-          "X-DanbooruSearch-Site": "https://tag-select.astrabrew.cn/",
-          ...(node.name === "international"
+          ...(quota === "site" ? {
+            "X-DanbooruSearch-Client": "tag-select-astrabrew",
+            "X-DanbooruSearch-Site": "https://tag-select.astrabrew.cn/",
+          } : {}),
+          ...(quota === "site" && node.name === "international"
             ? { Authorization: `Bearer ${apiKey!.trim()}` }
             : {}),
         },
@@ -125,6 +129,61 @@ async function requestWithFallback<T>(
     }
   }
   throw new Error(timedOut ? "timeout" : DANBOORU_SERVICE_ERROR);
+}
+
+/**
+ * Shared by the same-site route and the read-only AI search. The AI path passes
+ * `quota: "public"` so it never sends the site's registration headers or key.
+ */
+export async function fetchDanbooruRecommendations(
+  input: { tags: string[]; categories: string[]; show_nsfw: boolean },
+  requestSignal: AbortSignal,
+  options: Options,
+): Promise<DanbooruRecommendationData> {
+  const common = { tags: input.tags, show_nsfw: input.show_nsfw };
+  const sameCategoryBody = {
+    ...common,
+    limit: 24,
+    target_categories: input.categories.length ? input.categories : null,
+  };
+  const [artists, sameCategory, related] = await Promise.all([
+    requestWithFallback(
+      "/artists",
+      { ...common, limit: 12, min_cooc: 3 },
+      parseDanbooruArtists,
+      requestSignal,
+      options,
+    ),
+    requestWithFallback(
+      "/related",
+      sameCategoryBody,
+      parseDanbooruRelated,
+      requestSignal,
+      options,
+    ),
+    requestWithFallback(
+      "/related",
+      { ...common, limit: 24, target_categories: null },
+      parseDanbooruRelated,
+      requestSignal,
+      options,
+    ),
+  ]);
+  // Without a category filter both related calls return the same rows; keeping
+  // the cross-category copy only in `related` avoids a duplicated payload.
+  const sameCategoryRows = input.categories.length ? sameCategory.data : [];
+  return {
+    artists: artists.data,
+    sameCategory: sameCategoryRows,
+    related: related.data.filter(
+      (item) => !sameCategoryRows.some((same) => same.tag === item.tag),
+    ),
+    nodes: {
+      artists: artists.node,
+      sameCategory: sameCategory.node,
+      related: related.node,
+    },
+  };
 }
 
 export async function handleDanbooruRecommendations(
@@ -148,56 +207,8 @@ export async function handleDanbooruRecommendations(
   if (!input)
     return errorResponse("请选择 1–8 个有效的 Danbooru 标签。", 400);
 
-  const common = {
-    tags: input.tags,
-    show_nsfw: input.show_nsfw,
-  };
   try {
-    const [artists, sameCategory, related] = await Promise.all([
-      requestWithFallback(
-        "/artists",
-        { ...common, limit: 12, min_cooc: 3 },
-        parseDanbooruArtists,
-        request.signal,
-        options,
-      ),
-      requestWithFallback(
-        "/related",
-        {
-          ...common,
-          limit: 24,
-          target_categories: input.categories.length
-            ? input.categories
-            : null,
-        },
-        parseDanbooruRelated,
-        request.signal,
-        options,
-      ),
-      requestWithFallback(
-        "/related",
-        {
-          ...common,
-          limit: 24,
-          target_categories: null,
-        },
-        parseDanbooruRelated,
-        request.signal,
-        options,
-      ),
-    ]);
-    const data: DanbooruRecommendationData = {
-      artists: artists.data,
-      sameCategory: sameCategory.data,
-      related: related.data.filter(
-        (item) => !sameCategory.data.some((same) => same.tag === item.tag),
-      ),
-      nodes: {
-        artists: artists.node,
-        sameCategory: sameCategory.node,
-        related: related.node,
-      },
-    };
+    const data = await fetchDanbooruRecommendations(input, request.signal, options);
     return Response.json(data, { headers });
   } catch (error) {
     if (request.signal.aborted)

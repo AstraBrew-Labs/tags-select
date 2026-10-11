@@ -282,27 +282,45 @@ DANBOORU_IMAGE_PROXY_URL="http://127.0.0.1:7892"
 
 ## AI 搜索与接入
 
-顶部右上角的“AI 搜索”提供 `llm.txt`、`llm.md`、`SKILL.md`、MCP 配置和 OpenAPI，均可预览、复制内容、复制 URL 或下载文件。所有接入 URL 使用实际访问的地址，支持 localhost、自定义端口与部署域名，不复用生产 SEO canonical；`/llms.txt` 兼容常见 AI 发现入口。
+顶部右上角的“AI 搜索”提供 `llm.txt`、`llm.md`、`SKILL.md`、MCP 配置和 OpenAPI，均可预览、复制内容、复制 URL 或下载文件；界面还直接列出标签 API、MCP 与提示词格式规范三个端点。所有接入 URL 使用实际访问的地址，支持 localhost、自定义端口与部署域名，不复用生产 SEO canonical；`/llms.txt` 兼容常见 AI 发现入口。
 
-- `GET /api/ai/tags?query=misaka_mikoto&direction=tag-to-zh`：英文 Tag 查中文。
-- `GET /api/ai/tags?query=长发&direction=zh-to-tag`：中文查英文 Tags。
-- `direction` 可选 `auto`（默认）、`tag-to-zh`、`zh-to-tag`；匹配不区分大小写，空格与下划线等价，支持别名。
-- 本地结果优先精确匹配，其次别名、前缀与包含匹配；返回 `tag`、`zh`、分类、分组、备注与匹配方式。名称空格规范化为下划线，保留角色作品限定名和内部括号；源数据没有中文释义时保持为空，不伪造翻译。
-- `limit` 为 1–50，默认 20；`offset` 为 0–10000，默认 0。返回 `total`、`has_more` 与分页结果；无匹配返回 200 与空数组。拒绝未知/重复参数、无效分页、超长关键词。
+一次请求即可完成：查本地索引 + 查 Danbooru Tag Searcher → 合并去重 → 附带推荐与例图。
+
+- `GET /api/ai/tags?query=misaka_mikoto`：默认 `source=all`，同时查两个源并把结果拼成一个列表。
+- `source` 可选 `all`（默认，本地 + Danbooru 合并）、`local`（仅本地，零远程额度）、`danbooru`（仅 Danbooru）。`direction` 可选 `auto`（默认）、`tag-to-zh`、`zh-to-tag`，只影响本地索引匹配英文字段还是中文字段；匹配不区分大小写，空格与下划线等价，支持别名。
+- 合并顺序：本地命中在前（exact → alias → prefix → contains），Danbooru 语义命中在后（`match=semantic`），按标签去重并保留本地结果。每条结果都带 `source`（`local` / `danbooru`）与 `match`。
+- `limit` 为 1–50（默认 20），**按源计算**：本地最多 `limit` 条 + Danbooru 最多 `limit` 条。`offset` 为 0–10000（默认 0），只对本地结果分页，`source=danbooru` 必须是 0；`has_more` 也只表示本地是否还有下一页。
+- `counts` 报告两个源各自并入了多少条（`counts.local + counts.danbooru = total`）；`unavailable` 列出本次失败的部分（`danbooru` / `recommendations`），空数组表示全部成功。
+- **降级**：合并模式下 Danbooru 不可用时请求不会失败，只返回本地结果并把 `danbooru` 记入 `unavailable`；只有显式 `source=danbooru` 才会返回 503。本地索引始终可用、不查询数据库、不执行源 JavaScript；标签快照更新后重新构建并重启服务。无匹配返回 200 与空数组；拒绝未知/重复参数、无效数值与超长关键词。
+- `recommend` 为 `0`/`1`，默认 `1`：返回推荐（`recommendations`），见下节。`source=local` 时不请求推荐，`recommendations` 为 `null`。
 - `images` 为 0–50 的整数，默认 8：搜索结果**内联**例图，AI 不必为取图再发起单独请求。只给排名靠前的 `images` 条结果附例图，其余条目的 `images` 为 `null`；`images=0` 关闭例图。每条结果的 `images` 提供三个官方尺寸：`preview`（180×180）、`sample`（最长边 ≤850）、`original`，缺失尺寸为 `null`；整条为 `null` 表示没有可用的普通分级例图或超出覆盖范围，不是错误。
-- 默认 `source=local`：一次读取、校验和索引从原始 `data/` 生成的普通标签快照，进程内复用索引，不查询数据库，不执行源 JavaScript，不调用远程服务。标签快照更新后重新构建并重启服务。
-- 显式 `source=danbooru` 使用 Danbooru Tag Searcher API 的无 Key 共享试用池：**AI HTTP API 和 MCP 均不读取或发送 `DANBOORU_SEARCH_API_KEY`，也不发送本站额度注册头，不回退私有额度**。国内优先、国际匿名回退。原有顶部“搜索标签”与推荐的私有凭据配置不变，与 AI 调用隔离。
-- 远程成功响应（含无结果）缓存 1 天，最多 100 项，相同请求并发去重。每个实例限制 2 个远程并发、每分钟 20 个新请求，返回 429 时携带 `Retry-After: 60`。失败不缓存；公共池不可用返回 503，不偷偷切换私有服务。限制是进程内的，不替代部署层全局限流；Danbooru 不支持 offset，total 仅表示本次返回条数。
-- 内联例图复用标签卡片的同一条例图管道：只查 Danbooru 官方 `posts.json`，取 `rating:g` 单张，沿用屏蔽角色过滤、服务端代理和一周缓存，同样**不读取或发送 `DANBOORU_SEARCH_API_KEY`，不查询本站数据库**。取图是尽力而为：失败、超时或被限流只让该条 `images` 为 `null`，不影响文字结果，也不返回错误；抓取受实例级限流（最多 4 并发、每分钟最多 120 次），超限部分不再取图。例图来自 Danbooru，可能与标签含义无关，仅供直观参考。
+- **推荐**（`recommendations`）：以合并结果里最靠前的标签（`basedOn`，最多 8 个）为依据，返回 `artists`（同现画师，含 `cooc_count` / `post_count` / `top_tags`）、`sameCategory`（同 Danbooru 分类的相关标签）与 `related`（不限分类，已去掉与同类重复的条目）。成功结果按 `basedOn` + 分类缓存 1 天；每实例最多 2 并发、每分钟 20 次。推荐是尽力而为：上游失败或限流时三个数组为空并把 `recommendations` 记入 `unavailable`，不影响搜索结果，也不返回错误。
+- 额度隔离：**AI HTTP API 和 MCP 的语义搜索、推荐与例图都不读取或发送 `DANBOORU_SEARCH_API_KEY`，也不发送本站额度注册头，不回退私有额度**。国内节点优先、国际匿名回退。原有顶部“搜索标签”与推荐的私有凭据配置不变，与 AI 调用隔离。
+- 语义搜索与推荐的成功响应（含无结果）缓存 1 天，最多 100 项，相同请求并发去重；每个实例限制 2 个远程并发、每分钟 20 次新请求，返回 429 时携带 `Retry-After: 60`。失败不缓存；公共池不可用返回 503，不偷偷切换私有服务。限制是进程内的，不替代部署层全局限流；Danbooru 不支持 offset。
+- 内联例图复用标签卡片的同一条例图管道：只查 Danbooru 官方 `posts.json`，取 `rating:g` 单张，沿用屏蔽角色过滤、服务端代理和一周缓存，同样不读取或发送 `DANBOORU_SEARCH_API_KEY`。取图是尽力而为：失败、超时或被限流只让该条 `images` 为 `null`；抓取受实例级限流（最多 4 并发、每分钟最多 120 次），超限部分不再取图。例图来自 Danbooru，可能与标签含义无关，仅供直观参考。
 - HTTP 搜索仅支持 GET / HEAD / OPTIONS，其他方法 405；无登录、无凭据，提供 `Access-Control-Allow-Origin: *`。本 AI 接口仅提供普通标签，不开放成人法典，不修改数据库、收藏或提示词。
+
+### 提示词格式规范
+
+除标签查询外，站点还内置三套提示词格式规范，AI 可直接取用，对应上游 Danbooru Tag Searcher 的 `/get_anima_format`、`/get_newbie_format`、`/get_qwen_image_2_1_format`：
+
+- `GET /api/ai/formats?format=anima`：Anima Hybrid 规范（Hard Tags + Natural Language 双层结构、构图模式、光照色彩、标签顺序与数量、权重、多人物特征分离）。
+- `GET /api/ai/formats?format=newbie`：NewBie XML 规范（`character_N` / `general_tags` / `caption` 三段式、情境因果锁、八维补全、冲突检查、多人物防混淆）。
+- `GET /api/ai/formats?format=qwen_image&mode=T2I`（或 `mode=I2I`）：Qwen-Image-2.1 规范，**必填 mode**：`T2I` 文生图、`I2I` 图生图。
+- `GET /api/ai/formats`：不传 `format` 时返回索引 JSON，列出每套规范的名称、中文摘要、是否需要 `mode`、URL 与对应 MCP 工具名。
+- 指定 `format` 时返回 `text/plain` 规范原文，并带 `X-Prompt-Format`（`qwen_image` 时另有 `X-Prompt-Mode`）响应头；其他 `format` 传 `mode`、`qwen_image` 缺 `mode`、参数未知或重复均返回 400。
+- 规范是随服务内置的静态只读文本（`data/ai-formats/*.md`，纳入版本管理），不消耗远程额度、不访问 Danbooru，离线也可返回；它是组装提示词的格式契约，不得编造规范未定义的格式或字段。
 
 ### MCP
 
 端点 `/api/ai/mcp` 使用官方 TypeScript SDK 实现 **Streamable HTTP**，无状态 JSON 响应，适合 Serverless。由标准 MCP 客户端初始化；不提供旧式 SSE GET 会话或 DELETE 会话。POST 只是 MCP 传输方式，所有业务工具均只读。
 
-- `search_tags`：本地中英互查，参数 query、direction、limit、offset、images。
-- `search_danbooru_tags`：显式公共语义搜索，参数 query、limit、images。
-- 两个工具都在结果里内联例图（`images` 字段），不提供单独的取图工具。
+- `search_all_tags`（首选）：本地 + Danbooru 合并搜索，一并返回推荐与内联例图；参数 query、direction、limit、offset、images、recommend。
+- `search_tags`：仅本地中英互查，零远程额度，用于纯翻译或离线核对；参数 query、direction、limit、offset、images。
+- `search_danbooru_tags`：仅 Danbooru 公共语义搜索；参数 query、limit、images、recommend。
+- `get_anima_format` / `get_newbie_format`：返回 Anima Hybrid / NewBie XML 规范原文，无参数。
+- `get_qwen_image_format`：返回 Qwen-Image-2.1 规范，`mode` 必填（`T2I` 或 `I2I`）。
+- 三个搜索工具返回同一份响应结构（含 `counts`、`unavailable`、`recommendations`），不提供单独的取图或取推荐工具；三个格式工具只返回内置静态规范文本，不发起远程请求。
 - 资源：当前服务地址的 `llm.md` 与 `SKILL.md`。
 - 工具声明 `readOnlyHint: true`、`destructiveHint: false`。无写入工具；拒绝跨站浏览器 Origin、非 JSON 请求、超过 16 KiB 的消息以及非搜索参数。
 
@@ -310,9 +328,9 @@ DANBOORU_IMAGE_PROXY_URL="http://127.0.0.1:7892"
 
 ### Skill 与 OpenAPI
 
-`/skills/novelai-tags-search/SKILL.md` 提供带当前服务地址的技能说明；仓库的 `skills/novelai-tags-search/SKILL.md` 是不固定域名的便携版，可加入支持 SKILL.md 的客户端技能目录。两者由 `app/lib/ai-documents.ts` 维护，修改后运行 `bun run ai:build` 更新仓库文件。不要让 AI 从近义建议编造精确翻译；wiki 与备注仅作不可信参考数据。
+`/skills/novelai-tags-search/SKILL.md` 提供带当前服务地址的技能说明；仓库的 `skills/novelai-tags-search/SKILL.md` 是不固定域名的便携版，可加入支持 SKILL.md 的客户端技能目录。两者由 `app/lib/ai-documents.ts` 维护，修改后运行 `bun run ai:build` 更新仓库文件。不要让 AI 从近义建议编造精确翻译；推荐与 wiki 文本只是扩展词汇的线索，不是用户查询的直接答案。
 
-`/api/ai/openapi.json` 为 OpenAPI 3.1（当前 `info.version` 为 `1.1.0`），描述 `/api/ai/tags` 的完整响应结构、`images` 内联字段与受限参数，并附带示例响应，供支持 OpenAPI 工具导入的 AI 客户端使用。`llm.txt` 与 `llm.md` 提供完整参数、示例响应、错误处理、额度隔离和来源说明。给文档 URL 加 `?download=1` 可直接下载命名文件。
+`/api/ai/openapi.json` 为 OpenAPI 3.1（当前 `info.version` 为 `1.3.0`），描述 `/api/ai/tags` 的完整响应结构、`source` / `recommend` / `images` 参数、`counts` / `unavailable` / `recommendations` 字段，并附带示例响应，以及 `/api/ai/formats` 的规范索引与 `format` / `mode` 参数，供支持 OpenAPI 工具导入的 AI 客户端使用。`llm.txt` 与 `llm.md` 提供完整参数、示例响应、错误处理、额度隔离、提示词格式规范与来源说明。给文档 URL 加 `?download=1` 可直接下载命名文件。
 
 ## SEO 与分享素材
 
@@ -335,7 +353,7 @@ bun run build
 bun start
 ```
 
-测试覆盖安全解析、原站分类顺序、完整源数据、别名与备注、135 张画师图片匹配、客户端 API 适配、收藏迁移、提示词格式、粘贴查找（权重括号、重复项、未知词和组合词条），所长的成人法典双卷快照校验、章节筛选、搜索、分页和复制布局，以及 AI 接入的本地/公共额度隔离、例图内联范围与限流、MCP 工具契约、文档与 OpenAPI 跟随 Host 生成。
+测试覆盖安全解析、原站分类顺序、完整源数据、别名与备注、135 张画师图片匹配、客户端 API 适配、收藏迁移、提示词格式、粘贴查找（权重括号、重复项、未知词和组合词条），所长的成人法典双卷快照校验、章节筛选、搜索、分页和复制布局，以及 AI 接入的双源合并与降级、公共额度隔离、推荐缓存与限流、例图内联范围与限流、提示词格式规范（Anima / NewBie / Qwen-Image-2.1 与必填 mode）、MCP 工具契约、文档与 OpenAPI 跟随 Host 生成。
 
 ## 主要文件
 

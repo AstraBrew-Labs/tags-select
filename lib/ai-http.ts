@@ -7,6 +7,16 @@ export const AI_CORS_HEADERS = {
   "X-Robots-Tag": "noindex",
 };
 
+/** Query strings arrive as text; numbers and the 0/1 boolean must be typed
+ * before validation so malformed values are still rejected instead of coerced. */
+function queryValue(key: string, value: string): unknown {
+  if (["limit", "offset", "images"].includes(key))
+    return /^\d+$/.test(value) ? Number(value) : value;
+  if (key === "recommend")
+    return value === "1" ? true : value === "0" ? false : value;
+  return value;
+}
+
 export async function handleAiTagSearch(
   request: Request,
   search: (input: AiSearchInput, signal: AbortSignal) => Promise<AiSearchResult>,
@@ -16,9 +26,9 @@ export async function handleAiTagSearch(
     if ([...params.keys()].some((key) => params.getAll(key).length !== 1)) {
       throw new AiSearchError("搜索参数不能重复。", 400);
     }
-    const input = parseAiSearchInput(Object.fromEntries([...params].map(([key, value]) => [
-      key, ["limit", "offset", "images"].includes(key) && /^\d+$/.test(value) ? Number(value) : value,
-    ])));
+    const input = parseAiSearchInput(Object.fromEntries(
+      [...params].map(([key, value]) => [key, queryValue(key, value)]),
+    ));
     const data = await search(input, request.signal);
     return Response.json(data, {
       headers: { ...AI_CORS_HEADERS, "Cache-Control": "public, max-age=300, stale-while-revalidate=3600" },

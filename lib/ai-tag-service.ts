@@ -4,7 +4,9 @@ import { gunzipSync } from "node:zlib";
 import { isCatalogResponse } from "../app/lib/catalog-cache";
 import { createAiTagIndex, createAiTagSearch } from "./ai-tag-search";
 import { createAiTagImageEnricher } from "./ai-tag-images";
+import { createAiRecommendations } from "./ai-tag-recommendations";
 import { characterImageService } from "./danbooru-character-image-service";
+import { fetchDanbooruRecommendations } from "./danbooru-recommendation-service";
 import { searchDanbooru } from "./danbooru-search-service";
 
 let index: Promise<ReturnType<typeof createAiTagIndex>> | undefined;
@@ -24,10 +26,19 @@ const enrichImages = createAiTagImageEnricher({
   loadSizes: (tag) => characterImageService.loadSizes(tag).then((result) => result.sizes),
 });
 
+// Recommendations go through the same anonymous public pool as the semantic
+// search: no API key, no site registration headers, never a private fallback.
+const recommendations = createAiRecommendations({
+  fetchRecommendations: (input, signal) => fetchDanbooruRecommendations(
+    { ...input, show_nsfw: false }, signal, { quota: "public" },
+  ),
+});
+
 // Deliberately never read DANBOORU_SEARCH_API_KEY or query the application's DB.
 export const searchAiTags = createAiTagSearch({
   loadIndex,
   enrichImages,
+  fetchRecommendations: recommendations,
   remoteSearch: (query, limit, signal) => searchDanbooru(
     { query, limit, show_nsfw: false }, signal, { quota: "public" },
   ),

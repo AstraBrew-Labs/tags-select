@@ -72,12 +72,16 @@ export default function AiSearch() {
       </div>
       <dl className="ai-endpoints">
         <div>
-          <dt>Tags API（内联例图）</dt>
-          <dd><a href="/api/ai/tags?query=misaka_mikoto&images=8">{origin}/api/ai/tags</a></dd>
+          <dt>Tags API（双源合并 + 推荐 + 例图）</dt>
+          <dd><a href="/api/ai/tags?query=misaka_mikoto">{origin}/api/ai/tags</a></dd>
         </div>
         <div>
           <dt>MCP</dt>
           <dd><code>{origin}/api/ai/mcp</code></dd>
+        </div>
+        <div>
+          <dt>提示词格式规范（Anima / NewBie / Qwen-Image）</dt>
+          <dd><a href="/api/ai/formats">{origin}/api/ai/formats</a></dd>
         </div>
       </dl>
       <Tabs

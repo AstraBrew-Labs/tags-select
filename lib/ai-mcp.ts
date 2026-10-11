@@ -4,6 +4,7 @@ import { z } from "zod";
 import { buildAiGuide, buildAiSkill } from "../app/lib/ai-documents";
 import { AI_SEARCH_LIMIT, AiSearchError, parseAiSearchInput, type AiSearchInput, type AiSearchResult } from "./ai-tag-search";
 import { AI_TAG_IMAGE_DEFAULT } from "./ai-tag-images";
+import { AI_QWEN_IMAGE_MODES, readAiPromptFormat, type AiPromptFormatName } from "./ai-prompt-formats";
 import { aiRequestOrigin } from "./ai-document-response";
 import { readAiJson } from "./ai-http";
 
@@ -15,6 +16,7 @@ export function createAiMcpServer(origin: string, search: Search, signal: AbortS
   const limit = z.number().int().min(1).max(50).default(20);
   const direction = z.enum(["auto", "tag-to-zh", "zh-to-tag"]).default("auto");
   const images = z.number().int().min(0).max(AI_SEARCH_LIMIT).default(AI_TAG_IMAGE_DEFAULT);
+  const recommend = z.boolean().default(true);
   async function run(input: Record<string, unknown>) {
     try {
       const result = await search(parseAiSearchInput(input), signal);
@@ -24,18 +26,52 @@ export function createAiMcpServer(origin: string, search: Search, signal: AbortS
         `${error.status}: ${error.message}` : "503: 搜索暂不可用。请保留本地结果；不会使用本站私有额度。" }] };
     }
   }
+  server.registerTool("search_all_tags", {
+    title: "本地 + Danbooru 合并搜索与推荐",
+    description: "Preferred one-call lookup: merge the local dictionary with Danbooru semantic matches, then add recommended artists, same-category and related tags plus inline example images. Uses the anonymous shared Danbooru quota, so it can be slower and rate limited; `unavailable` lists any part that failed.",
+    inputSchema: z.object({ query, direction, limit, offset: z.number().int().min(0).max(10_000).default(0), images, recommend }).strict(),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }, (input) => run({ ...input, source: "all" }));
   server.registerTool("search_tags", {
-    title: "中英文 Tags 互查",
-    description: "Search the local general-audience dictionary by English tag, Chinese meaning or alias. Exact matches first. The leading results embed official Danbooru example image sizes. No database query or private quota.",
+    title: "本地 Tags 中英互查",
+    description: "Local-only dictionary lookup by English tag, Chinese meaning or alias. Exact matches first. Zero remote quota and no database query; use search_all_tags when semantic matches or recommendations are needed.",
     inputSchema: z.object({ query, direction, limit, offset: z.number().int().min(0).max(10_000).default(0), images }).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, (input) => run({ ...input, source: "local" }));
   server.registerTool("search_danbooru_tags", {
     title: "Danbooru 公共语义搜索",
-    description: "Explicit remote semantic search using anonymous shared quota only, never a private key. Successes cached for one day. May be rate limited; prefer local search.",
-    inputSchema: z.object({ query, limit, images }).strict(),
+    description: "Explicit Danbooru-only semantic search using anonymous shared quota only, never a private key. Successes cached for one day. May be rate limited; prefer search_all_tags.",
+    inputSchema: z.object({ query, limit, images, recommend }).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }, (input) => run({ ...input, source: "danbooru" }));
+  async function format(name: AiPromptFormatName, value?: string) {
+    try {
+      const spec = await readAiPromptFormat(name, value);
+      return { content: [{ type: "text" as const, text: spec.text }] };
+    } catch (error) {
+      return { isError: true, content: [{ type: "text" as const, text: error instanceof AiSearchError ?
+        `${error.status}: ${error.message}` : "503: 提示词格式规范暂不可用。" }] };
+    }
+  }
+  const formatAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+  server.registerTool("get_anima_format", {
+    title: "Anima Hybrid 提示词格式规范",
+    description: "Complete Anima Hybrid prompt-format specification (Hard Tags plus Natural Language): composition modes, subject scale, foreground limits, lighting and colour roles, tag order and counts, weighting, and the multi-character separation rules. Static local reference text; no remote quota.",
+    inputSchema: z.object({}).strict(),
+    annotations: formatAnnotations,
+  }, () => format("anima"));
+  server.registerTool("get_newbie_format", {
+    title: "NewBie XML 提示词格式规范",
+    description: "Complete NewBie XML prompt-format specification: the character_N / general_tags / caption structure plus the situational causality lock, tag escaping, eight-dimension completion checks, conflict checks and multi-character anti-mixing rules. Static local reference text; no remote quota.",
+    inputSchema: z.object({}).strict(),
+    annotations: formatAnnotations,
+  }, () => format("newbie"));
+  server.registerTool("get_qwen_image_format", {
+    title: "Qwen-Image-2.1 提示词格式规范",
+    description: "Complete Qwen-Image-2.1 prompt-format specification. `mode` is required: T2I rewrites a text-to-image request, I2I rewrites an image-editing instruction. Returns the matching spec and its JSON output format. Static local reference text; no remote quota.",
+    inputSchema: z.object({ mode: z.enum(AI_QWEN_IMAGE_MODES).describe("T2I 文生图，I2I 图生图") }).strict(),
+    annotations: formatAnnotations,
+  }, ({ mode }) => format("qwen_image", mode));
   server.registerResource("tag-search-guide", `${origin}/llm.md`, {
     title: "AI 搜索说明", mimeType: "text/markdown",
   }, async (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildAiGuide(origin) }] }));

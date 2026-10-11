@@ -26,37 +26,66 @@ describe("portable AI documents and download URLs", () => {
       }
     }
   });
-  test("OpenAPI advertises only the read-only search endpoint with bounded parameters and inline images", () => {
+  test("OpenAPI advertises the merged read-only search with bounded parameters, recommendations and images", () => {
     const spec = buildAiOpenApi("https://api.test");
     expect(spec.servers).toEqual([{ url: "https://api.test" }]);
-    expect(Object.keys(spec.paths)).toEqual(["/api/ai/tags"]);
+    expect(Object.keys(spec.paths)).toEqual(["/api/ai/tags", "/api/ai/formats"]);
     expect(Object.keys(spec.paths["/api/ai/tags"])).toEqual(["get"]);
     expect(spec.paths["/api/ai/tags"].get.security).toEqual([]);
-    expect(spec.paths["/api/ai/tags"].get.parameters.find((item) => item.name === "limit")?.schema.maximum).toBe(50);
-    const imagesParameter = spec.paths["/api/ai/tags"].get.parameters.find((item) => item.name === "images");
-    expect(imagesParameter?.schema).toMatchObject({ minimum: 0, maximum: 50, default: 8 });
-    const result = spec.paths["/api/ai/tags"].get.responses["200"].content["application/json"].schema.properties.results.items;
+    const parameters = spec.paths["/api/ai/tags"].get.parameters;
+    const byName = (name: string) => parameters.find((item) => item.name === name);
+    expect(byName("limit")?.schema).toMatchObject({ minimum: 1, maximum: 50, default: 20 });
+    expect(byName("source")?.schema).toMatchObject({ enum: ["all", "local", "danbooru"], default: "all" });
+    expect(byName("images")?.schema).toMatchObject({ minimum: 0, maximum: 50, default: 8 });
+    expect(byName("recommend")?.schema).toMatchObject({ type: "boolean", default: true });
+    const response = spec.paths["/api/ai/tags"].get.responses["200"].content["application/json"];
+    const result = response.schema.properties.results.items;
     expect(result.required).toContain("images");
+    expect(result.required).toContain("source");
+    expect(result.properties.source.enum).toEqual(["local", "danbooru"]);
     expect(Object.keys(result.properties.images.properties)).toEqual(["preview", "sample", "original"]);
-    expect(spec.info.version).toBe("1.1.0");
-    const example = spec.paths["/api/ai/tags"].get.responses["200"].content["application/json"].example;
-    expect(example).toMatchObject({ images: 8, source: "local" });
-    expect(Object.keys(example.results[0].images)).toEqual(["preview", "sample", "original"]);
+    expect(response.schema.required).toEqual(expect.arrayContaining(["counts", "unavailable", "recommendations", "recommend"]));
+    expect(response.schema.properties.unavailable.items.enum).toEqual(["danbooru", "recommendations"]);
+    expect(Object.keys(response.schema.properties.recommendations.properties)).toEqual(["basedOn", "artists", "sameCategory", "related"]);
+    expect(spec.info.version).toBe("1.3.0");
+    expect(response.example).toMatchObject({
+      images: 8, recommend: true, source: "all", counts: { local: 1, danbooru: 1 }, unavailable: [],
+    });
+    expect(response.example.results.map((item) => item.source)).toEqual(["local", "danbooru"]);
+    expect(Object.keys(response.example.results[0].images)).toEqual(["preview", "sample", "original"]);
+    expect(response.example.recommendations.basedOn).toHaveLength(2);
   });
-  test("documents the inline example images and offers no separate image endpoint", () => {
+  test("documents the merged search, recommendations and inline images with no separate endpoints", () => {
     for (const document of [buildAiDocument("markdown", "https://api.test"), buildAiDocument("text", "https://api.test"), buildAiSkill("https://api.test")]) {
-      expect(document).toContain("images");
-      expect(document).toContain("preview");
-      expect(document).toContain("sample");
+      for (const marker of ["images", "preview", "sample", "recommendations", "search_all_tags", "unavailable"]) {
+        expect(document).toContain(marker);
+      }
       expect(document).not.toContain("/api/ai/images");
       expect(document).not.toContain("get_tag_image");
     }
+  });
+  test("documents the three prompt-format specifications and their required qwen mode", () => {
+    for (const document of [buildAiDocument("markdown", "https://api.test"), buildAiDocument("text", "https://api.test"), buildAiSkill("https://api.test")]) {
+      expect(document).toContain("https://api.test/api/ai/formats");
+      for (const marker of ["anima", "newbie", "qwen_image", "get_anima_format", "get_newbie_format", "get_qwen_image_format", "T2I", "I2I"]) {
+        expect(document).toContain(marker);
+      }
+    }
+    const formats = buildAiOpenApi("https://api.test").paths["/api/ai/formats"].get;
+    expect(formats.security).toEqual([]);
+    expect(Object.keys(formats.responses)).toEqual(["200", "400"]);
+    const byName = (name: string) => formats.parameters.find((item) => item.name === name);
+    expect(byName("format")?.schema).toMatchObject({ enum: ["anima", "newbie", "qwen_image"] });
+    expect(byName("mode")?.schema).toMatchObject({ enum: ["T2I", "I2I"] });
+    const index = formats.responses["200"].content["application/json"].schema.properties.formats.items;
+    expect(index.required).toEqual(expect.arrayContaining(["format", "mode_required", "modes", "url", "mcp_tool"]));
   });
   test("portable repository skill is generated from the same maintained source", async () => {
     const content = await readFile("skills/novelai-tags-search/SKILL.md", "utf8");
     expect(content).toBe(buildAiSkill(""));
     expect(content.startsWith("---\nname: novelai-tags-search\n")).toBe(true);
-    expect(content).toContain("search_tags");
-    expect(content).toContain("search_danbooru_tags");
+    expect(content).toContain("search_all_tags");
+    expect(content).toContain("recommendations");
+    expect(content).toContain("images");
   });
 });

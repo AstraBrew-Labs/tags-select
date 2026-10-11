@@ -9,10 +9,12 @@ import {
   BookIcon,
   CodeIcon,
   ChevronRightIcon,
+  ExternalLinkIcon,
   FlowerIcon,
   GridIcon,
   HelpCircleIcon,
   HeartIcon,
+  InfoIcon,
   EyeIcon,
   ImageIcon,
   PencilIcon,
@@ -48,6 +50,7 @@ import TagFilterBar, {
 import PromptComposer from "./responsive-prompt-composer";
 import ViewportSelect from "./viewport-select";
 import UsageGuide from "./usage-guide";
+import AboutSite, { REPO_URL } from "./about-site";
 import TagGroupTabs from "./tag-group-tabs";
 import {
   adjustPromptWeights,
@@ -116,9 +119,9 @@ export default function TagSelector() {
   const [selected, setSelected] = useState<string[]>([]);
   const [weights, setWeights] = useState<Record<string, number>>({});
   const [weightSyntax, setWeightSyntax] = useState<WeightSyntax>("brackets");
-  const [dialog, setDialog] = useState<"help" | "recipes" | "clear" | null>(
-    null,
-  );
+  const [dialog, setDialog] = useState<
+    "help" | "about" | "recipes" | "clear" | null
+  >(null);
   const { favorites, toggleFavorite } = useFavorites(normalizeTagIds);
   const currentTagFilter = effectiveTagFilter(
     tagFilter,
@@ -314,6 +317,15 @@ export default function TagSelector() {
               onClick={() => setDialog("help")}
             >
               使用指南
+            </Button>
+            <Button
+              type="text"
+              icon={<InfoIcon {...iconProps} size={18} />}
+              aria-label="关于"
+              title="关于"
+              onClick={() => setDialog("about")}
+            >
+              关于
             </Button>
           </nav>
         </header>
@@ -724,6 +736,16 @@ export default function TagSelector() {
           </span>
           <p>用一点点标签，描绘大大的想象。</p>
           <span>非官方社区工具 · 只读 API 标签库</span>
+          <a
+            className="footer-repo"
+            href={REPO_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            aria-label="开源仓库 GitHub"
+          >
+            <ExternalLinkIcon {...iconProps} size={14} />
+            开源仓库
+          </a>
         </footer>
         <Modal
           variant="game"
@@ -733,9 +755,11 @@ export default function TagSelector() {
           title={
             dialog === "help"
               ? "使用指南"
-              : dialog === "clear"
-                ? "清空这个灵感篮子？"
-                : "给灵感一点起点"
+              : dialog === "about"
+                ? "关于本站"
+                : dialog === "clear"
+                  ? "清空这个灵感篮子？"
+                  : "给灵感一点起点"
           }
           footer={
             dialog === "clear" ? (
@@ -760,6 +784,8 @@ export default function TagSelector() {
         >
           {dialog === "help" ? (
             <UsageGuide />
+          ) : dialog === "about" ? (
+            <AboutSite />
           ) : dialog === "clear" ? (
             <p>
               将移除灵感篮子中的 {selectedIds.length}{" "}

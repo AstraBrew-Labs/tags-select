@@ -7,7 +7,13 @@ import type { AiSearchInput } from "./ai-tag-search";
 
 const search = async (input: AiSearchInput) => ({
   ...input, total: 1, has_more: false,
-  results: [{ id: "test", tag: "misaka_mikoto", zh: "御坂美琴", aliases: [], category: "characters", category_name: "角色", group: "某科学", note: null, match: "exact" as const, images: null }],
+  counts: { local: 1, danbooru: 0 }, unavailable: [] as never[],
+  recommendations: null,
+  results: [{
+    id: "test", tag: "misaka_mikoto", zh: "御坂美琴", aliases: [], category: "characters",
+    category_name: "角色", group: "某科学", note: null, match: "exact" as const,
+    source: "local" as const, images: null,
+  }],
 });
 const request = (body: unknown, headers: Record<string, string> = {}) => new Request("http://localhost:3107/api/ai/mcp", {
   method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers },
@@ -26,21 +32,46 @@ describe("real read-only MCP protocol", () => {
     try {
       await client.connect(transport);
       const { tools } = await client.listTools();
-      expect(tools.map((tool) => tool.name)).toEqual(["search_tags", "search_danbooru_tags"]);
+      expect(tools.map((tool) => tool.name)).toEqual([
+        "search_all_tags", "search_tags", "search_danbooru_tags",
+        "get_anima_format", "get_newbie_format", "get_qwen_image_format",
+      ]);
       for (const tool of tools) expect(tool.annotations?.readOnlyHint).toBe(true);
+      const combined = await client.callTool({ name: "search_all_tags", arguments: { query: "御坂美琴", images: 0, recommend: false } });
+      expect(combined.isError).not.toBe(true);
+      expect(combined.structuredContent).toMatchObject({ source: "all", images: 0, recommend: false });
       const local = await client.callTool({ name: "search_tags", arguments: { query: "御坂美琴", images: 0 } });
       expect(local.isError).not.toBe(true);
-      expect(local.structuredContent).toMatchObject({ source: "local", images: 0 });
+      expect(local.structuredContent).toMatchObject({ source: "local" });
       await client.callTool({ name: "search_danbooru_tags", arguments: { query: "白色水手服" } });
-      expect(calls.map((input) => input.source)).toEqual(["local", "danbooru"]);
+      expect(calls.map((input) => input.source)).toEqual(["all", "local", "danbooru"]);
       // Inline images default on and can be switched off per call.
       expect(calls[0].images).toBe(0);
-      expect(calls[1].images).toBe(AI_TAG_IMAGE_DEFAULT);
+      expect(calls[2].images).toBe(AI_TAG_IMAGE_DEFAULT);
+      expect(calls[0].recommend).toBe(false);
+      expect(calls[1].recommend).toBe(true);
       const { resources } = await client.listResources();
       expect(resources).toHaveLength(2);
       const resource = await client.readResource({ uri: resources[0].uri });
       expect(resource.contents[0]).toMatchObject({ mimeType: "text/markdown" });
       expect(resource.contents[0].text).toContain("http://localhost:3107/api/ai/tags");
+      // Prompt-format specs are static local text: no search call is made for them.
+      const callsBeforeFormats = calls.length;
+      const textOf = (result: { content: { type: string; text?: string }[] }) => {
+        const block = result.content[0];
+        if (block.type !== "text" || typeof block.text !== "string") throw new Error("expected a text block");
+        return block.text;
+      };
+      const anima = await client.callTool({ name: "get_anima_format", arguments: {} });
+      expect(anima.isError).not.toBe(true);
+      expect(textOf(anima)).toContain("# Anima Hybrid Prompt Format Specification");
+      const newbie = await client.callTool({ name: "get_newbie_format", arguments: {} });
+      expect(textOf(newbie)).toContain("# NewBie XML Prompt Format Specification");
+      const qwen = await client.callTool({ name: "get_qwen_image_format", arguments: { mode: "I2I" } });
+      expect(qwen.isError).not.toBe(true);
+      expect(textOf(qwen)).toContain("Edit Prompt Enhancer");
+      expect((await client.callTool({ name: "get_qwen_image_format", arguments: {} })).isError).toBe(true);
+      expect(calls.length).toBe(callsBeforeFormats);
     } finally { await client.close(); }
   });
   test("rejects private-key parameters before calling the service", async () => {

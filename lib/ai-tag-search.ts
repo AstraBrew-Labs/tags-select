@@ -2,18 +2,32 @@ import type { CatalogResponse } from "../app/lib/catalog-types";
 import { normalizePromptTagName } from "../app/lib/prompt-weights";
 import { preprocessPromptQuery } from "../app/lib/prompt-preprocessing";
 import type { DanbooruImageSizes } from "../app/lib/character-image-types";
-import type { DanbooruSearchResponse } from "../app/lib/danbooru-types";
+import {
+  DANBOORU_RECOMMENDATION_TAG_LIMIT,
+  type DanbooruArtistRecommendation,
+  type DanbooruRecommendationData,
+  type DanbooruRelatedRecommendation,
+  type DanbooruSearchResponse,
+} from "../app/lib/danbooru-types";
 import { AI_TAG_IMAGE_DEFAULT } from "./ai-tag-images";
 
 export const AI_SEARCH_LIMIT = 50;
 export const AI_REMOTE_CACHE_TTL = 24 * 60 * 60_000;
+export const AI_REMOTE_TIMEOUT_MS = 25_000;
+export const AI_REMOTE_LIMIT_PER_MINUTE = 20;
+export const AI_REMOTE_MAX_CONCURRENCY = 2;
+/** Categories the Danbooru recommendation service accepts as a filter. */
+export const AI_DANBOORU_CATEGORIES = ["General", "Artist", "Copyright", "Character", "Meta"] as const;
+
+export type AiSearchSource = "all" | "local" | "danbooru";
 export type AiSearchInput = {
   query: string;
   direction: "auto" | "tag-to-zh" | "zh-to-tag";
-  source: "local" | "danbooru";
+  source: AiSearchSource;
   limit: number;
   offset: number;
   images: number;
+  recommend: boolean;
 };
 export type AiTagResult = {
   id: string;
@@ -25,13 +39,33 @@ export type AiTagResult = {
   group: string;
   note: string | null;
   match: "exact" | "alias" | "prefix" | "contains" | "semantic";
+  /** Which index produced this row; merged responses carry both values. */
+  source: "local" | "danbooru";
   /** Inline official Danbooru example image sizes; null when none was attached. */
   images: DanbooruImageSizes | null;
 };
-export type AiSearchResult = AiSearchInput & {
+export type AiTagPage = {
   total: number;
   has_more: boolean;
   results: AiTagResult[];
+};
+export type AiRecommendations = {
+  /** Tags the recommendations were derived from, in match-quality order. */
+  basedOn: string[];
+  artists: DanbooruArtistRecommendation[];
+  sameCategory: DanbooruRelatedRecommendation[];
+  related: DanbooruRelatedRecommendation[];
+};
+/** Sources that were requested but could not answer; empty when all succeeded. */
+export type AiUnavailable = "danbooru" | "recommendations";
+export type AiSearchResult = AiSearchInput & {
+  total: number;
+  has_more: boolean;
+  /** How many merged rows each source contributed; the two add up to total. */
+  counts: { local: number; danbooru: number };
+  unavailable: AiUnavailable[];
+  results: AiTagResult[];
+  recommendations: AiRecommendations | null;
 };
 export class AiSearchError extends Error {
   constructor(message: string, public status: number) { super(message); }
@@ -42,7 +76,7 @@ export function parseAiSearchInput(value: unknown): AiSearchInput {
     throw new AiSearchError("请提供搜索参数。", 400);
   }
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some((key) => !["query", "direction", "source", "limit", "offset", "images"].includes(key))) {
+  if (Object.keys(input).some((key) => !["query", "direction", "source", "limit", "offset", "images", "recommend"].includes(key))) {
     throw new AiSearchError("存在未知搜索参数。", 400);
   }
   if (typeof input.query !== "string" || !input.query.trim() || input.query.length > 300) {
@@ -51,24 +85,33 @@ export function parseAiSearchInput(value: unknown): AiSearchInput {
   const query = preprocessPromptQuery(input.query).trim();
   if (!query || query.length > 300) throw new AiSearchError("请输入有效标签或中文关键词。", 400);
   const direction = input.direction ?? "auto";
-  const source = input.source ?? "local";
+  const source = input.source ?? "all";
   const limit = input.limit ?? 20;
   const offset = input.offset ?? 0;
   const images = input.images ?? AI_TAG_IMAGE_DEFAULT;
+  const recommend = input.recommend ?? true;
   if (typeof direction !== "string" || !["auto", "tag-to-zh", "zh-to-tag"].includes(direction) ||
-      typeof source !== "string" || !["local", "danbooru"].includes(source) ||
+      typeof source !== "string" || !["all", "local", "danbooru"].includes(source) ||
       typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > AI_SEARCH_LIMIT ||
       typeof offset !== "number" || !Number.isInteger(offset) || offset < 0 || offset > 10_000 ||
-      typeof images !== "number" || !Number.isInteger(images) || images < 0 || images > AI_SEARCH_LIMIT) {
-    throw new AiSearchError("direction/source 无效，limit 须为 1–50，offset 须为 0–10000，images 须为 0–50 的整数。", 400);
+      typeof images !== "number" || !Number.isInteger(images) || images < 0 || images > AI_SEARCH_LIMIT ||
+      typeof recommend !== "boolean") {
+    throw new AiSearchError("direction/source 无效，limit 须为 1–50，offset 须为 0–10000，images 须为 0–50 的整数，recommend 须为布尔值。", 400);
   }
   if (source === "danbooru" && offset !== 0) {
     throw new AiSearchError("Danbooru 搜索不支持分页，offset 必须为 0。", 400);
   }
-  return { query, direction: direction as AiSearchInput["direction"], source: source as AiSearchInput["source"], limit, offset, images };
+  return {
+    query,
+    direction: direction as AiSearchInput["direction"],
+    source: source as AiSearchInput["source"],
+    limit, offset, images, recommend,
+  };
 }
 
 const normalize = (value: string) => value.trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ");
+/** Dedupe key shared by the local index and the merged remote rows. */
+const mergeKey = (tag: string) => tag.trim().toLowerCase().replace(/_/g, " ");
 
 export function createAiTagIndex(catalog: CatalogResponse) {
   const categories = new Map(catalog.categories.map((item) => [item.id, item.nameZh]));
@@ -78,11 +121,12 @@ export function createAiTagIndex(catalog: CatalogResponse) {
       id: tag.id, tag: normalizePromptTagName(tag.en), zh: tag.zh,
       aliases: tag.aliases, category: tag.categoryId,
       category_name: categories.get(tag.categoryId) ?? tag.categoryId,
-      group: groups.get(tag.groupId) ?? "", note: tag.note, images: null,
+      group: groups.get(tag.groupId) ?? "", note: tag.note,
+      source: "local" as const, images: null,
     },
     en: normalize(tag.en), zh: normalize(tag.zh), aliases: tag.aliases.map(normalize),
   }));
-  return (input: AiSearchInput): AiSearchResult => {
+  return (input: AiSearchInput): AiTagPage => {
     const query = normalize(input.query);
     const words = query.split(" ");
     const matches = rows.flatMap((row) => {
@@ -99,18 +143,43 @@ export function createAiTagIndex(catalog: CatalogResponse) {
       return [{ score, result: { ...row.result, match } }];
     }).sort((a, b) => a.score - b.score || a.result.tag.localeCompare(b.result.tag) || a.result.id.localeCompare(b.result.id));
     return {
-      ...input, total: matches.length, has_more: input.offset + input.limit < matches.length,
+      total: matches.length,
+      has_more: input.offset + input.limit < matches.length,
       results: matches.slice(input.offset, input.offset + input.limit).map((item) => item.result),
     };
   };
 }
 
+/** A plausible single Danbooru tag for the recommendation upstream. */
+function recommendationTag(tag: string) {
+  const value = tag.trim().replace(/^artist:\s*/i, "").replace(/\s+/g, "_").toLowerCase();
+  return value && value.length <= 100 && !/[,:*]/.test(value) && !/^[-~]/.test(value)
+    ? value
+    : null;
+}
+
+export function recommendationTags(results: readonly AiTagResult[], limit = DANBOORU_RECOMMENDATION_TAG_LIMIT) {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  for (const result of results) {
+    if (tags.length >= limit) break;
+    const tag = recommendationTag(result.tag);
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    tags.push(tag);
+  }
+  return tags;
+}
+
 export function createAiTagSearch({
-  loadIndex, remoteSearch, enrichImages = async (results) => results.map((item) => item.images), now = Date.now,
+  loadIndex, remoteSearch, fetchRecommendations,
+  enrichImages = async (results) => results.map((item) => item.images), now = Date.now,
 }: {
   loadIndex: () => Promise<ReturnType<typeof createAiTagIndex>>;
   remoteSearch: (query: string, limit: number, signal: AbortSignal) => Promise<DanbooruSearchResponse>;
-  /** Best-effort inline example images for the leading results. */
+  /** Best-effort recommendations; null means the public pool could not answer. */
+  fetchRecommendations?: (input: { tags: string[]; categories: string[] }, signal: AbortSignal) => Promise<DanbooruRecommendationData | null>;
+  /** Best-effort inline example images for the leading merged results. */
   enrichImages?: (results: readonly AiTagResult[], count: number, signal: AbortSignal) => Promise<(DanbooruImageSizes | null)[]>;
   now?: () => number;
 }) {
@@ -118,45 +187,102 @@ export function createAiTagSearch({
   const pending = new Map<string, Promise<AiTagResult[]>>();
   let windowStart = 0;
   let attempts = 0;
+
+  async function searchRemote(query: string, limit: number): Promise<AiTagResult[]> {
+    const key = JSON.stringify([query.toLowerCase(), limit]);
+    const saved = cache.get(key);
+    if (saved && now() < saved.expiresAt) return saved.results;
+    let job = pending.get(key);
+    if (!job) {
+      if (now() - windowStart >= 60_000) { windowStart = now(); attempts = 0; }
+      if (attempts >= AI_REMOTE_LIMIT_PER_MINUTE || pending.size >= AI_REMOTE_MAX_CONCURRENCY) {
+        throw new AiSearchError("公共搜索繁忙，请稍后重试或使用本地搜索。", 429);
+      }
+      attempts++;
+      // A disconnected caller must not cancel a shared request used by other agents.
+      job = remoteSearch(query, limit, AbortSignal.timeout(AI_REMOTE_TIMEOUT_MS)).then((data) => {
+        const rows: AiTagResult[] = data.results.slice(0, limit).map((item) => ({
+          id: item.tag, tag: normalizePromptTagName(item.tag), zh: item.cn_name,
+          aliases: item.alias_from ? [item.alias_from] : [],
+          category: item.category, category_name: item.category, group: "",
+          note: item.wiki || null, match: "semantic", source: "danbooru", images: null,
+        }));
+        if (cache.size >= 100) cache.delete(cache.keys().next().value!);
+        cache.set(key, { results: rows, expiresAt: now() + AI_REMOTE_CACHE_TTL });
+        return rows;
+      }).finally(() => pending.delete(key));
+      pending.set(key, job);
+    }
+    return job;
+  }
+
   return async (input: AiSearchInput, signal: AbortSignal): Promise<AiSearchResult> => {
     signal.throwIfAborted();
-    const decorate = async (results: AiTagResult[]) => {
-      if (input.images <= 0 || results.length === 0) return results;
-      const sizes = await enrichImages(results, input.images, signal);
-      return results.map((result, index) => ({ ...result, images: sizes[index] ?? null }));
-    };
-    if (input.source === "local") {
-      const page = (await loadIndex())(input);
-      return { ...page, results: await decorate(page.results) };
-    }
-    const key = JSON.stringify([input.query.toLowerCase(), input.limit]);
-    const saved = cache.get(key);
-    let results = saved && now() < saved.expiresAt ? saved.results : undefined;
-    if (!results) {
-      let job = pending.get(key);
-      if (!job) {
-        if (now() - windowStart >= 60_000) { windowStart = now(); attempts = 0; }
-        if (attempts >= 20 || pending.size >= 2) {
-          throw new AiSearchError("公共搜索繁忙，请稍后重试或使用本地搜索。", 429);
-        }
-        attempts++;
-        // A disconnected caller must not cancel a shared request used by other agents.
-        job = remoteSearch(input.query, input.limit, AbortSignal.timeout(25_000)).then((data) => {
-          const rows: AiTagResult[] = data.results.slice(0, input.limit).map((item) => ({
-            id: item.tag, tag: normalizePromptTagName(item.tag), zh: item.cn_name,
-            aliases: item.alias_from ? [item.alias_from] : [],
-            category: item.category, category_name: item.category, group: "",
-            note: item.wiki || null, match: "semantic", images: null,
-          }));
-          if (cache.size >= 100) cache.delete(cache.keys().next().value!);
-          cache.set(key, { results: rows, expiresAt: now() + AI_REMOTE_CACHE_TTL });
-          return rows;
-        }).finally(() => pending.delete(key));
-        pending.set(key, job);
+    const unavailable: AiUnavailable[] = [];
+    const localJob = input.source === "danbooru"
+      ? Promise.resolve<AiTagPage | null>(null)
+      : loadIndex().then((index) => index(input));
+    const remoteJob: Promise<AiTagResult[] | null> = input.source === "local"
+      ? Promise.resolve(null)
+      : searchRemote(input.query, input.limit).catch((error) => {
+        // An explicit Danbooru-only search must still report the failure, while
+        // the combined mode keeps serving the local half instead of failing.
+        if (input.source === "danbooru") throw error;
+        unavailable.push("danbooru");
+        return null;
+      });
+    const [localPage, remoteRows] = await Promise.all([localJob, remoteJob]);
+
+    const local = localPage?.results ?? [];
+    const remote = remoteRows ?? [];
+    const seen = new Set(local.map((item) => mergeKey(item.tag)));
+    const extra = remote.filter((item) => {
+      const key = mergeKey(item.tag);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const merged = [...local, ...extra];
+    const counts = { local: local.length, danbooru: extra.length };
+
+    const basedOn = recommendationTags(merged);
+    const categories = [...new Set(remote.map((item) => item.category))]
+      .filter((category) => (AI_DANBOORU_CATEGORIES as readonly string[]).includes(category))
+      .slice(0, AI_DANBOORU_CATEGORIES.length);
+    const recommendationJob = (async (): Promise<AiRecommendations | null> => {
+      // null means no recommendation was performed: switched off, a local-only
+      // query, or a deployment without the recommendation service wired in.
+      if (!input.recommend || input.source === "local" || !fetchRecommendations) return null;
+      if (basedOn.length === 0) {
+        return { basedOn, artists: [], sameCategory: [], related: [] };
       }
-      results = await job;
-    }
+      const data = await fetchRecommendations({ tags: basedOn, categories }, signal);
+      if (!data) {
+        unavailable.push("recommendations");
+        return { basedOn, artists: [], sameCategory: [], related: [] };
+      }
+      return {
+        basedOn, artists: data.artists,
+        sameCategory: data.sameCategory, related: data.related,
+      };
+    })();
+
+    const imageJob = (async () => {
+      if (input.images <= 0 || merged.length === 0) return merged;
+      const sizes = await enrichImages(merged, input.images, signal);
+      return merged.map((result, index) => ({ ...result, images: sizes[index] ?? null }));
+    })();
+
+    const [results, recommendations] = await Promise.all([imageJob, recommendationJob]);
     signal.throwIfAborted();
-    return { ...input, total: results.length, has_more: false, results: await decorate(results) };
+    return {
+      ...input,
+      total: results.length,
+      has_more: localPage?.has_more ?? false,
+      counts,
+      unavailable,
+      results,
+      recommendations,
+    };
   };
 }

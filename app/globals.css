@@ -1276,6 +1276,20 @@ a:focus-visible,
 .site-footer > span:first-child svg {
   color: var(--animal-primary-color-active);
 }
+.site-footer .footer-repo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--animal-text-color-secondary);
+  transition: color 0.18s ease;
+}
+.site-footer .footer-repo svg {
+  color: var(--animal-primary-color-active);
+}
+.site-footer .footer-repo:hover {
+  color: var(--app-green-ink);
+}
 .help-content {
   font-size: 13px;
   line-height: 1.9;
@@ -1295,7 +1309,8 @@ a:focus-visible,
 .help-content section > p + p {
   margin-top: 10px;
 }
-.help-content ol {
+.help-content ol,
+.help-content ul {
   padding-left: 22px;
   margin: 15px 0;
 }
@@ -1305,6 +1320,42 @@ a:focus-visible,
 .help-caveat {
   color: var(--animal-text-color-secondary);
   font-size: 11px;
+}
+.about-repo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 15px;
+  border: 1px solid var(--animal-border-color-light);
+  border-radius: var(--animal-border-radius-sm);
+  background: var(--app-green-light);
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+.about-repo:hover {
+  border-color: var(--animal-primary-color-active);
+}
+.about-repo > svg {
+  flex-shrink: 0;
+  color: var(--app-green-ink);
+}
+.about-repo-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.about-repo-body strong {
+  font-size: 13px;
+  font-weight: 800;
+}
+.about-repo-body small {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--animal-text-color-secondary);
+  overflow-wrap: anywhere;
 }
 .recipe-list {
   display: flex;
@@ -2531,7 +2582,7 @@ a:focus-visible,
   }
   .site-header .header-nav {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     width: 100%;
     gap: 2px;
   }

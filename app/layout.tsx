@@ -1,5 +1,6 @@
 import type { Viewport } from "next";
 import { Suspense } from "react";
+import { Analytics } from "@vercel/analytics/next";
 import "animal-island-ui/style";
 import "./globals.css";
 import DatasetPrefetch from "./components/dataset-prefetch";
@@ -36,6 +37,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Suspense fallback={null}><StructuredData /></Suspense>
         <DatasetPrefetch />
         {children}
+        <Analytics />
       </body>
     </html>
   );
