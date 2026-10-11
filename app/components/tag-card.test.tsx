@@ -167,5 +167,14 @@ describe("library-composed tag cards", () => {
     });
     expect(html).toContain("本地画风参考");
     expect(html).not.toContain("Danbooru 例图");
+    expect(html).not.toContain("tag-card-refresh-button");
+  });
+  test("Danbooru examples keep their attribution without a refresh button", () => {
+    for (const category of ["body", "characters", "illustrator"] as const) {
+      const html = render(false, false, { ...tag, category });
+      expect(html).toContain("Danbooru 例图 · 仅供参考");
+      expect(html).not.toContain("tag-card-refresh-button");
+      expect(html).not.toContain('aria-label="刷新');
+    }
   });
 });

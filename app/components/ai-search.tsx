@@ -29,11 +29,15 @@ function AiDocument({ item, origin }: { item: typeof AI_DOCUMENTS[number]; origi
         <div className="ai-document-actions">
           <Tooltip title="复制内容">
             <Button type="text" aria-label={`复制 ${item.name} 内容`} disabled={!origin}
-              icon={<CopyIcon {...iconProps} />} onClick={() => void copy(content, "内容")} />
+              icon={<CopyIcon {...iconProps} />} onClick={() => void copy(content, "内容")}>
+              <span className="ai-action-label">复制内容</span>
+            </Button>
           </Tooltip>
           <Tooltip title="复制 URL">
             <Button type="text" aria-label={`复制 ${item.name} URL`} disabled={!origin}
-              icon={<LinkIcon {...iconProps} />} onClick={() => void copy(url, "URL")} />
+              icon={<LinkIcon {...iconProps} />} onClick={() => void copy(url, "URL")}>
+              <span className="ai-action-label">复制 URL</span>
+            </Button>
           </Tooltip>
           <Tooltip title="下载文件">
             <Button type="text" aria-label={`下载 ${item.name}`} disabled={!origin}
@@ -44,7 +48,9 @@ function AiDocument({ item, origin }: { item: typeof AI_DOCUMENTS[number]; origi
                 document.body.append(link);
                 link.click();
                 link.remove();
-              }} />
+              }}>
+              <span className="ai-action-label">下载文件</span>
+            </Button>
           </Tooltip>
         </div>
       </div>

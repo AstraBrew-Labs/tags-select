@@ -23,14 +23,24 @@ export function useTagImage(rawTag: string, enabled: boolean) {
     const load = () => {
       if (cancelled || started) return;
       started = true;
-      setState({ tag, imageUrl: null, status: "loading" });
+      setState((previous) => ({
+        tag,
+        imageUrl: previous?.tag === tag ? previous.imageUrl : null,
+        status: "loading",
+      }));
       void loadCharacterImage(tag)
         .then((imageUrl) => {
           if (!cancelled)
             setState({ tag, imageUrl, status: imageUrl ? "ready" : "missing" });
         })
         .catch(() => {
-          if (!cancelled) setState({ tag, imageUrl: null, status: "error" });
+          if (!cancelled) {
+            setState((previous) => ({
+              tag,
+              imageUrl: previous?.tag === tag ? previous.imageUrl : null,
+              status: "error",
+            }));
+          }
         });
     };
     if (!host || typeof IntersectionObserver === "undefined") {

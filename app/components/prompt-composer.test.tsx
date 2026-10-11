@@ -47,6 +47,7 @@ describe("wide top prompt composer", () => {
       expect(html).toContain(content);
     expect(html).not.toContain("prompt-sidebar");
     expect(html).not.toContain("selected-prompt-controls");
+    expect(html).toContain('id="prompt-composer-heading"');
   });
   test("switch shows curly, round and NovelAI formats and retains weights", () => {
     const curly = render();

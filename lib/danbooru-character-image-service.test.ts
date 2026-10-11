@@ -12,6 +12,9 @@ function response(body: unknown, status = 200) {
   });
 }
 
+/** The blocked-character filter every upstream query must carry. */
+const BLOCKED = "-scaramouche_(genshin_impact)";
+
 describe("Danbooru character image proxy", () => {
   test("ordinary tags use the same general-rated query and shared weekly cache", async () => {
     const queries: string[] = [];
@@ -25,7 +28,11 @@ describe("Danbooru character image proxy", () => {
       expect((await service.load(tag)).imageUrl).toBe("https://cdn.donmai.us/a.jpg");
       expect((await service.load(tag)).cached).toBe(true);
     }
-    expect(queries).toEqual(["long_hair rating:g", "forest rating:g", "anmi rating:g"]);
+    expect(queries).toEqual([
+      `long_hair rating:g ${BLOCKED}`,
+      `forest rating:g ${BLOCKED}`,
+      `anmi rating:g ${BLOCKED}`,
+    ]);
   });
   test("normalizes tags and requests one post from the official posts endpoint", async () => {
     let requested = "";
@@ -48,12 +55,17 @@ describe("Danbooru character image proxy", () => {
       tag: "klee_(genshin_impact)",
       imageUrl: "https://danbooru.donmai.us/data/klee-preview.jpg",
       cached: false,
+      cachedAt: 1_000,
     });
     const url = new URL(requested);
     expect(url.origin + url.pathname).toBe("https://danbooru.donmai.us/posts.json");
-    expect(url.searchParams.get("tags")).toBe("klee_(genshin_impact) rating:g");
+    expect(url.searchParams.get("tags")).toBe(
+      `klee_(genshin_impact) rating:g ${BLOCKED}`,
+    );
     expect(url.searchParams.get("limit")).toBe("1");
     expect(url.searchParams.get("only")).toContain("preview_file_url");
+    // The post's own tag lists must be fetched to double-check the filter.
+    expect(url.searchParams.get("only")).toContain("tag_string");
   });
   test("deduplicates concurrent calls and reuses a one-week cached URL", async () => {
     let requests = 0;
@@ -92,7 +104,7 @@ describe("Danbooru character image proxy", () => {
     expect((await service.load("unknown_character")).cached).toBe(true);
     expect(requests).toBe(1);
   });
-  test("route validates origin and returns an explicitly cacheable result", async () => {
+  test("route validates origin and forbids hidden browser and CDN response caches", async () => {
     const service = createCharacterImageService({
       fetcher: async () => response([{
         rating: "g",
@@ -111,9 +123,7 @@ describe("Danbooru character image proxy", () => {
       { service },
     );
     expect(allowed.status).toBe(200);
-    expect(allowed.headers.get("cache-control")).toContain(
-      `max-age=${CHARACTER_IMAGE_CACHE_TTL / 1000}`,
-    );
+    expect(allowed.headers.get("cache-control")).toBe("no-store");
     expect(await allowed.json()).toMatchObject({
       tag: "a",
       imageUrl: "https://danbooru.donmai.us/data/a.jpg",
@@ -151,7 +161,7 @@ describe("Danbooru character image proxy", () => {
     const result = await service.load("kafuu chino (gochuumon wa usagi desu ka?)");
     expect(result.imageUrl).toBe("https://cdn.donmai.us/a.jpg");
     expect(new URL(requested).searchParams.get("tags")).toBe(
-      "kafuu_chino_(gochuumon_wa_usagi_desu_ka?) rating:g",
+      `kafuu_chino_(gochuumon_wa_usagi_desu_ka?) rating:g ${BLOCKED}`,
     );
   });
   test("maps only verified source names to Danbooru names for image lookup", async () => {
@@ -170,7 +180,8 @@ describe("Danbooru character image proxy", () => {
     expect((await service.load("jouga_maya")).cached).toBe(true);
     await service.load("other_(unverified_work?)");
     expect(queries).toEqual([
-      "jouga_maya rating:g", "other_(unverified_work?) rating:g",
+      `jouga_maya rating:g ${BLOCKED}`,
+      `other_(unverified_work?) rating:g ${BLOCKED}`,
     ]);
   });
   test("distinguishes timeout from empty results and never caches timeout", async () => {
@@ -231,5 +242,106 @@ describe("Danbooru character image proxy", () => {
     expect(failed.headers.get("cache-control")).toBe("no-store");
     expect((await service.load("a")).cached).toBe(false);
     expect(requests).toBe(2);
+  });
+  test("route refresh bypasses the server weekly cache and stores the newest URL", async () => {
+    let requests = 0;
+    let time = 1_000;
+    const service = createCharacterImageService({
+      now: () => time,
+      fetcher: async (_input, init) => {
+        expect(init?.cache).toBe("no-store");
+        expect(new Headers(init?.headers).get("cache-control")).toBe("no-cache");
+        return response([{
+          rating: "g", preview_file_url: `https://cdn.donmai.us/${++requests}.jpg`,
+        }]);
+      },
+    });
+    const initial = await service.load("a");
+    expect(initial.cachedAt).toBe(1_000);
+    time = 2_000;
+    expect((await service.load("a")).cachedAt).toBe(1_000);
+    const fresh = await handleCharacterImage(
+      new Request("https://site.example/api/danbooru/character-image?tag=a&refresh=1"),
+      { service },
+    );
+    expect(fresh.headers.get("cache-control")).toBe("no-store");
+    expect(fresh.headers.get("x-character-image-cache")).toBe("miss");
+    expect(await fresh.json()).toEqual({
+      tag: "a", imageUrl: "https://cdn.donmai.us/2.jpg", cached: false, cachedAt: 2_000,
+    });
+    expect((await service.load("a")).imageUrl).toBe("https://cdn.donmai.us/2.jpg");
+    expect(requests).toBe(2);
+  });
+  test("concurrent refreshes deduplicate and an older request cannot overwrite a newer result", async () => {
+    const resolvers: Array<(data: Response) => void> = [];
+    const service = createCharacterImageService({
+      fetcher: () => new Promise((resolve) => resolvers.push(resolve)),
+    });
+    const old = service.load("a");
+    const fresh = service.load("a", undefined, { refresh: true });
+    const duplicate = service.load("a", undefined, { refresh: true });
+    expect(resolvers).toHaveLength(2);
+    resolvers[1](response([{ rating: "g", preview_file_url: "https://cdn.donmai.us/new.jpg" }]));
+    expect((await fresh).imageUrl).toBe("https://cdn.donmai.us/new.jpg");
+    expect((await duplicate).imageUrl).toBe("https://cdn.donmai.us/new.jpg");
+    resolvers[0](response([{ rating: "g", preview_file_url: "https://cdn.donmai.us/old.jpg" }]));
+    await old;
+    expect((await service.load("a")).imageUrl).toBe("https://cdn.donmai.us/new.jpg");
+  });
+  test("blocks preview images whose own tags carry a filtered character", async () => {
+    const queries: string[] = [];
+    const service = createCharacterImageService({
+      fetcher: async (input) => {
+        queries.push(new URL(String(input)).searchParams.get("tags")!);
+        // The upstream ignored the negative filter and still returned a blocked post.
+        return response([{
+          rating: "g",
+          tag_string: "1girl solo genshin_impact scaramouche_(genshin_impact)",
+          tag_string_character: "scaramouche_(genshin_impact)",
+          preview_file_url: "https://cdn.donmai.us/a.jpg",
+          large_file_url: "https://cdn.donmai.us/a.jpg",
+        }]);
+      },
+    });
+    const result = await service.load("genshin impact");
+    expect(queries).toEqual([`genshin_impact rating:g ${BLOCKED}`]);
+    // A filtered image is reported exactly like an empty upstream result.
+    expect(result).toMatchObject({ tag: "genshin_impact", imageUrl: null });
+    expect((await service.load("genshin impact")).cached).toBe(true);
+  });
+  test("recognizes a filtered tag regardless of letter case or position", async () => {
+    for (const tag of [
+      "Scaramouche_(Genshin_Impact)",
+      "scarAMOUCHE_(genshin_impact)",
+      "1girl solo scaramouche_(genshin_impact)",
+    ]) {
+      const service = createCharacterImageService({
+        fetcher: async () => response([{
+          rating: "g",
+          tag_string: tag,
+          preview_file_url: "https://cdn.donmai.us/a.jpg",
+        }]),
+      });
+      expect((await service.load("genshin impact")).imageUrl).toBeNull();
+    }
+  });
+  test("keeps serving an ordinary example image while the filter is active", async () => {
+    let requested = "";
+    const service = createCharacterImageService({
+      fetcher: async (input) => {
+        requested = String(input);
+        return response([{
+          rating: "g",
+          tag_string: "1girl solo klee_(genshin_impact)",
+          preview_file_url: "https://cdn.donmai.us/klee.jpg",
+        }]);
+      },
+    });
+    expect((await service.load("klee (genshin impact)")).imageUrl).toBe(
+      "https://cdn.donmai.us/klee.jpg",
+    );
+    expect(new URL(requested).searchParams.get("tags")).toBe(
+      `klee_(genshin_impact) rating:g ${BLOCKED}`,
+    );
   });
 });

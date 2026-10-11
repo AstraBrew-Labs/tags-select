@@ -12,6 +12,7 @@ export default function UsageGuide() {
           </li>
           <li>
             <strong>组合提示词</strong>：逐项或批量加减权，也可重置、移除或清空已选标签。
+            手机端点击右侧悬浮的“提示词”入口展开“我的提示词”抽屉，关闭后继续选词，已选标签会保留。
             加权格式在大括号、圆括号和 NovelAI 数值格式之间循环切换，保留权重档位。
             提示词预览、整组复制和单标签复制都会把名称内部的空格转为下划线，例如
             <code>misaka mikoto</code> 输出为 <code>misaka_mikoto</code>。

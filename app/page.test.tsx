@@ -27,6 +27,7 @@ describe("homepage server render", () => {
     expect(html).toContain("常用推荐");
     expect(html).not.toContain("我的收藏");
     expect(html).not.toContain("已选择 0");
+    expect(html).not.toContain('aria-label="提示词快捷操作"');
   });
   test("removes the entire bottom inspiration banner", () => {
     const html = renderToStaticMarkup(<Home />);

@@ -23,7 +23,7 @@ function setup() {
     now: () => time,
     fetchImage: async (tag: string) => {
       calls.push(tag);
-      return { tag, imageUrl, cached: false };
+      return { tag, imageUrl, cached: false, cachedAt: time };
     },
   };
   return {
@@ -93,7 +93,7 @@ describe("one-week character image URL cache", () => {
       fetchImage: async (tag) => {
         requests++;
         if (requests === 1) throw new Error("Unavailable");
-        return { tag, imageUrl: null, cached: false };
+        return { tag, imageUrl: null, cached: false, cachedAt: 1_000 };
       },
     });
     await expect(loader.load("a")).rejects.toThrow("Unavailable");
@@ -103,10 +103,13 @@ describe("one-week character image URL cache", () => {
   });
   test("invalid data and URLs are never persisted", async () => {
     for (const data of [
-      { tag: "wrong", imageUrl, cached: false },
-      { tag: "a", imageUrl: "https://other.example/a.jpg", cached: false },
-      { tag: "a", imageUrl: "https://cdn.donmai.us/a.mp4", cached: false },
-      { tag: "a", imageUrl: 7, cached: false },
+      { tag: "wrong", imageUrl, cached: false, cachedAt: 1_000 },
+      { tag: "a", imageUrl: "https://other.example/a.jpg", cached: false, cachedAt: 1_000 },
+      { tag: "a", imageUrl: "https://cdn.donmai.us/a.mp4", cached: false, cachedAt: 1_000 },
+      { tag: "a", imageUrl: 7, cached: false, cachedAt: 1_000 },
+      { tag: "a", imageUrl, cached: false },
+      { tag: "a", imageUrl, cached: false, cachedAt: -1 },
+      { tag: "a", imageUrl, cached: false, cachedAt: Infinity },
     ]) {
       const s = setup();
       const loader = createCharacterImageLoader({
@@ -174,11 +177,131 @@ describe("one-week character image URL cache", () => {
         maxActive = Math.max(maxActive, active);
         await new Promise((resolve) => setTimeout(resolve, 1));
         active--;
-        return { tag, imageUrl, cached: false };
+        return { tag, imageUrl, cached: false, cachedAt: 1_000 };
       },
     });
     await Promise.all(Array.from({ length: 10 }, (_, i) => loader.load(`a_${i}`)));
     expect(maxActive).toBe(3);
     expect(active).toBe(0);
+  });
+  test("clearing persisted URLs invalidates memory and requests fresh upstream data", async () => {
+    const s = setup();
+    const refreshes: boolean[] = [];
+    const loader = createCharacterImageLoader({
+      ...s.options,
+      fetchImage: async (tag, options) => {
+        refreshes.push(options.refresh);
+        return {
+          tag, cached: false, cachedAt: 1_000,
+          imageUrl: `https://cdn.donmai.us/${refreshes.length}.jpg`,
+        };
+      },
+    });
+    expect(await loader.load("a")).toBe("https://cdn.donmai.us/1.jpg");
+    expect(await loader.load("a")).toBe("https://cdn.donmai.us/1.jpg");
+    s.values.delete(CHARACTER_IMAGE_CACHE_KEY);
+    expect(await loader.load("a")).toBe("https://cdn.donmai.us/2.jpg");
+    expect(refreshes).toEqual([true, true]);
+    s.values.delete(CHARACTER_IMAGE_CACHE_KEY);
+    expect(await createCharacterImageLoader({
+      ...s.options,
+      fetchImage: async (tag, options) => {
+        expect(options.refresh).toBe(true);
+        return { tag, imageUrl, cached: false, cachedAt: 1_000 };
+      },
+    }).load("a")).toBe(imageUrl);
+  });
+  test("manual refresh bypasses persisted and memory caches and replaces both", async () => {
+    const s = setup();
+    let requests = 0;
+    const options = {
+      ...s.options,
+      fetchImage: async (tag: string) => ({
+        tag, cached: false, cachedAt: 1_000,
+        imageUrl: `https://cdn.donmai.us/${++requests}.jpg`,
+      }),
+    };
+    const loader = createCharacterImageLoader(options);
+    await loader.load("a");
+    expect(await loader.load("a", { refresh: true })).toBe("https://cdn.donmai.us/2.jpg");
+    expect(await loader.load("a")).toBe("https://cdn.donmai.us/2.jpg");
+    expect(await createCharacterImageLoader(options).load("a")).toBe("https://cdn.donmai.us/2.jpg");
+    expect(requests).toBe(2);
+  });
+  test("uses the original upstream timestamp rather than extending a cached response", async () => {
+    const s = setup();
+    s.setTime(1_000 + CHARACTER_IMAGE_CACHE_TTL - 1);
+    let requests = 0;
+    const loader = createCharacterImageLoader({
+      ...s.options,
+      fetchImage: async (tag) => {
+        requests++;
+        return { tag, imageUrl, cached: true, cachedAt: 1_000 };
+      },
+    });
+    await loader.load("a");
+    expect(JSON.parse(s.values.get(CHARACTER_IMAGE_CACHE_KEY)!).entries[0].cachedAt).toBe(1_000);
+    s.setTime(1_000 + CHARACTER_IMAGE_CACHE_TTL);
+    await loader.load("a");
+    expect(requests).toBe(2);
+  });
+  test("late ordinary requests cannot overwrite a refreshed cache or delete its pending request", async () => {
+    const s = setup();
+    const resolvers: Array<(data: unknown) => void> = [];
+    const loader = createCharacterImageLoader({
+      ...s.options,
+      fetchImage: () => new Promise((resolve) => resolvers.push(resolve)),
+    });
+    const old = loader.load("a");
+    const fresh = loader.load("a", { refresh: true });
+    const duplicate = loader.load("a", { refresh: true });
+    expect(resolvers).toHaveLength(2);
+    resolvers[0]({ tag: "a", imageUrl, cached: false, cachedAt: 1_000 });
+    await old;
+    const normal = loader.load("a");
+    expect(resolvers).toHaveLength(2);
+    const updated = "https://cdn.donmai.us/new.jpg";
+    resolvers[1]({ tag: "a", imageUrl: updated, cached: false, cachedAt: 1_000 });
+    expect(await Promise.all([fresh, duplicate, normal])).toEqual([updated, updated, updated]);
+    expect(await loader.load("a")).toBe(updated);
+  });
+  test("failed manual refresh retains a previously successful cache for subsequent reads", async () => {
+    const s = setup();
+    let calls = 0;
+    const loader = createCharacterImageLoader({
+      ...s.options,
+      fetchImage: async (tag) => {
+        if (++calls > 1) throw new Error("Unavailable");
+        return { tag, imageUrl, cached: false, cachedAt: 1_000 };
+      },
+    });
+    await loader.load("a");
+    await expect(loader.load("a", { refresh: true })).rejects.toThrow("Unavailable");
+    expect(await loader.load("a")).toBe(imageUrl);
+    expect(calls).toBe(2);
+  });
+  test("a storage write failure never replaces a refreshed memory URL with an older persisted URL", async () => {
+    const s = setup();
+    let calls = 0;
+    let denied = false;
+    const loader = createCharacterImageLoader({
+      ...s.options,
+      storage: () => ({
+        ...s.options.storage(),
+        setItem: (key, value) => {
+          if (denied) throw new Error("Quota exceeded");
+          s.options.storage().setItem(key, value);
+        },
+      }),
+      fetchImage: async (tag) => ({
+        tag, cached: false, cachedAt: 1_000,
+        imageUrl: `https://cdn.donmai.us/${++calls}.jpg`,
+      }),
+    });
+    await loader.load("a");
+    denied = true;
+    expect(await loader.load("a", { refresh: true })).toBe("https://cdn.donmai.us/2.jpg");
+    expect(await loader.load("a")).toBe("https://cdn.donmai.us/2.jpg");
+    expect(calls).toBe(2);
   });
 });

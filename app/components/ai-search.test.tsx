@@ -10,6 +10,9 @@ describe("AI integration workspace", () => {
     expect(html).toContain('aria-label="复制 llm.txt URL"');
     expect(html).toContain('aria-label="下载 llm.txt"');
     expect(html).toContain('aria-label="llm.txt 内容"');
+    for (const label of ["复制内容", "复制 URL", "下载文件"]) {
+      expect(html).toContain(`class="ai-action-label">${label}</span>`);
+    }
     expect(html).not.toContain("https://tag-select.astrabrew.cn");
   });
 });

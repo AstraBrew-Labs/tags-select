@@ -11,6 +11,8 @@ export async function generateMetadata() {
 }
 export const viewport: Viewport = {
   themeColor: "#f7f8ef",
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 async function StructuredData() {

@@ -45,7 +45,7 @@ import TagFilterBar, {
   effectiveTagFilter,
   type TagFilter,
 } from "./tag-filter-bar";
-import PromptComposer from "./prompt-composer";
+import PromptComposer from "./responsive-prompt-composer";
 import ViewportSelect from "./viewport-select";
 import UsageGuide from "./usage-guide";
 import TagGroupTabs from "./tag-group-tabs";
@@ -192,7 +192,15 @@ export default function TagSelector() {
   }
   function updatePage(value: number) {
     setPage(value);
-    if (gridRef.current) gridRef.current.scrollTop = 0;
+    const grid = gridRef.current;
+    if (!grid) return;
+    grid.scrollTop = 0;
+    if (window.matchMedia("(max-width: 680px)").matches) {
+      window.scrollTo({
+        top: Math.max(0, window.scrollY + grid.getBoundingClientRect().top - 16),
+        behavior: "instant",
+      });
+    }
   }
   function adjustWeight(id: string, delta: number) {
     if (!selected.includes(id)) return;
