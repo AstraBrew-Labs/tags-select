@@ -67,6 +67,45 @@ describe("Danbooru character image proxy", () => {
     // The post's own tag lists must be fetched to double-check the filter.
     expect(url.searchParams.get("only")).toContain("tag_string");
   });
+  test("the adult opt-in drops the rating gate and keeps its own cache slot", async () => {
+    const queries: string[] = [];
+    const service = createCharacterImageService({
+      fetcher: async (input) => {
+        const tags = new URL(String(input)).searchParams.get("tags")!;
+        queries.push(tags);
+        return response([{ rating: tags.includes("rating:g") ? "g" : "e", preview_file_url: "https://cdn.donmai.us/a.jpg" }]);
+      },
+    });
+    const safe = await service.loadSizes("klee_(genshin_impact)");
+    expect(safe.sizes?.preview).toBe("https://cdn.donmai.us/a.jpg");
+    const adult = await service.loadSizes("klee_(genshin_impact)", { adult: true });
+    expect(adult.sizes?.preview).toBe("https://cdn.donmai.us/a.jpg");
+    expect(queries).toEqual([
+      `klee_(genshin_impact) rating:g ${BLOCKED}`,
+      `klee_(genshin_impact) ${BLOCKED}`,
+    ]);
+    // Each mode is cached separately and neither upstream call is repeated.
+    expect((await service.loadSizes("klee_(genshin_impact)")).cached).toBe(true);
+    expect((await service.loadSizes("klee_(genshin_impact)", { adult: true })).cached).toBe(true);
+    expect((await service.load("klee_(genshin_impact)")).cached).toBe(true);
+    expect(queries).toHaveLength(2);
+  });
+  test("an adult lookup still drops blocked characters and unknown ratings", async () => {
+    const service = createCharacterImageService({
+      fetcher: async (input) => {
+        // The negative filter must survive in the query itself.
+        expect(new URL(String(input)).searchParams.get("tags")).toBe(`klee_(genshin_impact) ${BLOCKED}`);
+        return response([
+          { rating: "e", preview_file_url: "https://cdn.donmai.us/a.jpg", tag_string_character: "scaramouche_(genshin_impact)" },
+        ]);
+      },
+    });
+    expect((await service.loadSizes("klee_(genshin_impact)", { adult: true })).sizes).toBeNull();
+    const bogus = createCharacterImageService({
+      fetcher: async () => response([{ rating: "x", preview_file_url: "https://cdn.donmai.us/a.jpg" }]),
+    });
+    expect((await bogus.loadSizes("klee_(genshin_impact)", { adult: true })).sizes).toBeNull();
+  });
   test("deduplicates concurrent calls and reuses a one-week cached URL", async () => {
     let requests = 0;
     let now = 10_000;

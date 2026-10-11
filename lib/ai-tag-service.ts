@@ -20,10 +20,12 @@ function loadIndex() {
 }
 
 // The example images reuse the tag-card pipeline, so they cost no extra private
-// quota: general-rating posts only, blocked characters filtered, one weekly
-// server-side cache and the same optional outbound proxy.
+// quota: one weekly server-side cache and the same optional outbound proxy. The
+// per-result adult flag decides the rating gate: safe rows keep `rating:g`,
+// an opt-in adult row drops it and may return a sensitive/explicit post.
 const enrichImages = createAiTagImageEnricher({
-  loadSizes: (tag) => characterImageService.loadSizes(tag).then((result) => result.sizes),
+  loadSizes: (tag, options) =>
+    characterImageService.loadSizes(tag, options).then((result) => result.sizes),
 });
 
 // Recommendations go through the same anonymous public pool as the semantic
@@ -34,17 +36,20 @@ const enrichImages = createAiTagImageEnricher({
 // same-site page keeps its own, longer budget.
 const recommendations = createAiRecommendations({
   fetchRecommendations: (input, signal) => fetchDanbooruRecommendations(
-    { ...input, show_nsfw: false }, signal,
+    input, signal,
     { quota: "public", partial: true, timeouts: [10_000, 15_000] },
   ),
 });
 
 // Deliberately never read DANBOORU_SEARCH_API_KEY or query the application's DB.
+// `show_nsfw` is the caller's opt-in and travels through untouched: off keeps
+// the general-audience behaviour of every earlier release, on widens the local
+// index, the public pool and the example images alike.
 export const searchAiTags = createAiTagSearch({
   loadIndex,
   enrichImages,
   fetchRecommendations: recommendations,
-  remoteSearch: (query, limit, signal) => searchDanbooru(
-    { query, limit, show_nsfw: false }, signal, { quota: "public" },
+  remoteSearch: (query, limit, showNsfw, signal) => searchDanbooru(
+    { query, limit, show_nsfw: showNsfw }, signal, { quota: "public" },
   ),
 });

@@ -1,6 +1,7 @@
 import type { CatalogResponse } from "../app/lib/catalog-types";
 import { normalizePromptTagName } from "../app/lib/prompt-weights";
 import { preprocessPromptQuery } from "../app/lib/prompt-preprocessing";
+import { isDanbooruNsfw } from "../app/lib/danbooru-types";
 import type { DanbooruImageSizes } from "../app/lib/character-image-types";
 import {
   DANBOORU_RECOMMENDATION_TAG_LIMIT,
@@ -39,6 +40,12 @@ export type AiSearchInput = {
   offset: number;
   images: number;
   recommend: boolean;
+  /**
+   * Opt-in adult results (local `r18` rows, Danbooru rows flagged nsfw and
+   * adult-rated example images). Off by default so an unqualified AI call
+   * stays general-audience, matching the site's own age-gated switch.
+   */
+  show_nsfw: boolean;
 };
 export type AiTagResult = {
   id: string;
@@ -57,6 +64,12 @@ export type AiTagResult = {
   source: "local" | "danbooru" | "local+danbooru";
   /** Fields the local row was missing and Danbooru supplied, e.g. ["note"]; empty otherwise. */
   filled_fields: string[];
+  /**
+   * Adult row: a local `r18` entry or a Danbooru row the source flagged nsfw.
+   * Only reachable with `show_nsfw`, and it also decides whether the example
+   * image lookup may return an adult-rated post.
+   */
+  adult: boolean;
   /** Inline official Danbooru example image sizes; null when none was attached. */
   images: DanbooruImageSizes | null;
 };
@@ -92,7 +105,7 @@ export function parseAiSearchInput(value: unknown): AiSearchInput {
     throw new AiSearchError("请提供搜索参数。", 400);
   }
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some((key) => !["query", "direction", "source", "limit", "offset", "images", "recommend"].includes(key))) {
+  if (Object.keys(input).some((key) => !["query", "direction", "source", "limit", "offset", "images", "recommend", "show_nsfw"].includes(key))) {
     throw new AiSearchError("存在未知搜索参数。", 400);
   }
   if (typeof input.query !== "string" || !input.query.trim() || input.query.length > 300) {
@@ -106,13 +119,14 @@ export function parseAiSearchInput(value: unknown): AiSearchInput {
   const offset = input.offset ?? 0;
   const images = input.images ?? AI_TAG_IMAGE_DEFAULT;
   const recommend = input.recommend ?? true;
+  const showNsfw = input.show_nsfw ?? false;
   if (typeof direction !== "string" || !["auto", "tag-to-zh", "zh-to-tag"].includes(direction) ||
       typeof source !== "string" || !["all", "local", "danbooru"].includes(source) ||
       typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > AI_SEARCH_LIMIT ||
       typeof offset !== "number" || !Number.isInteger(offset) || offset < 0 || offset > 10_000 ||
       typeof images !== "number" || !Number.isInteger(images) || images < 0 || images > AI_SEARCH_LIMIT ||
-      typeof recommend !== "boolean") {
-    throw new AiSearchError("direction/source 无效，limit 须为 1–50，offset 须为 0–10000，images 须为 0–50 的整数，recommend 须为布尔值。", 400);
+      typeof recommend !== "boolean" || typeof showNsfw !== "boolean") {
+    throw new AiSearchError("direction/source 无效，limit 须为 1–50，offset 须为 0–10000，images 须为 0–50 的整数，recommend/show_nsfw 须为布尔值。", 400);
   }
   if (source === "danbooru" && offset !== 0) {
     throw new AiSearchError("Danbooru 搜索不支持分页，offset 必须为 0。", 400);
@@ -121,7 +135,7 @@ export function parseAiSearchInput(value: unknown): AiSearchInput {
     query,
     direction: direction as AiSearchInput["direction"],
     source: source as AiSearchInput["source"],
-    limit, offset, images, recommend,
+    limit, offset, images, recommend, show_nsfw: showNsfw,
   };
 }
 
@@ -132,13 +146,16 @@ const mergeKey = (tag: string) => tag.trim().toLowerCase().replace(/_/g, " ");
 export function createAiTagIndex(catalog: CatalogResponse) {
   const categories = new Map(catalog.categories.map((item) => [item.id, item.nameZh]));
   const groups = new Map(catalog.groups.map((item) => [item.id, item.nameZh]));
-  const rows = catalog.tags.filter((tag) => tag.categoryId !== "r18").map((tag) => ({
+  // The adult `r18` rows are indexed too, but only a `show_nsfw` request may see
+  // them: a safe request filters them out before ranking, so they can never leak
+  // into `total`, pagination or the merged page.
+  const rows = catalog.tags.map((tag) => ({
     result: {
       id: tag.id, tag: normalizePromptTagName(tag.en), zh: tag.zh,
       aliases: tag.aliases, category: tag.categoryId,
       category_name: categories.get(tag.categoryId) ?? tag.categoryId,
       group: groups.get(tag.groupId) ?? "", note: tag.note,
-      source: "local" as const, filled_fields: [], images: null,
+      source: "local" as const, filled_fields: [], adult: tag.categoryId === "r18", images: null,
     },
     en: normalize(tag.en), zh: normalize(tag.zh), aliases: tag.aliases.map(normalize),
   }));
@@ -146,6 +163,7 @@ export function createAiTagIndex(catalog: CatalogResponse) {
     const query = normalize(input.query);
     const words = query.split(" ");
     const matches = rows.flatMap((row) => {
+      if (row.result.adult && !input.show_nsfw) return [];
       const primary = input.direction === "tag-to-zh" ? [row.en] :
         input.direction === "zh-to-tag" ? [row.zh] : [row.en, row.zh];
       const fields = [...primary, ...row.aliases];
@@ -200,9 +218,10 @@ export function mergeDanbooruSupplement(base: AiTagResult, supplement: AiTagResu
   if (note && !base.note?.trim()) filled_fields.push("note");
   if (zh && !base.zh.trim()) filled_fields.push("zh");
   if (aliases.length > base.aliases.length) filled_fields.push("aliases");
+  // `adult` stays the local verdict: the curated row decides whether the tag is
+  // adult, so a Danbooru flag on a safe local entry cannot switch its rating.
   return { ...base, zh, note, aliases, source: "local+danbooru", filled_fields };
 }
-
 /**
  * Merges the two ranked pages: local rows keep their position (completed with
  * Danbooru data when the tag exists there), then the remaining Danbooru rows
@@ -234,9 +253,9 @@ export function createAiTagSearch({
   enrichImages = async (results) => results.map((item) => item.images), now = Date.now,
 }: {
   loadIndex: () => Promise<ReturnType<typeof createAiTagIndex>>;
-  remoteSearch: (query: string, limit: number, signal: AbortSignal) => Promise<DanbooruSearchResponse>;
+  remoteSearch: (query: string, limit: number, showNsfw: boolean, signal: AbortSignal) => Promise<DanbooruSearchResponse>;
   /** Best-effort recommendations; null means the public pool could not answer. */
-  fetchRecommendations?: (input: { tags: string[]; categories: string[] }, signal: AbortSignal) => Promise<DanbooruRecommendationData | null>;
+  fetchRecommendations?: (input: { tags: string[]; categories: string[]; show_nsfw: boolean }, signal: AbortSignal) => Promise<DanbooruRecommendationData | null>;
   /** Best-effort inline example images for the leading merged results. */
   enrichImages?: (results: readonly AiTagResult[], count: number, signal: AbortSignal) => Promise<(DanbooruImageSizes | null)[]>;
   now?: () => number;
@@ -246,8 +265,11 @@ export function createAiTagSearch({
   let windowStart = 0;
   let attempts = 0;
 
-  async function searchRemote(query: string, limit: number): Promise<AiTagResult[]> {
-    const key = JSON.stringify([query.toLowerCase(), limit]);
+  async function searchRemote(query: string, limit: number, showNsfw: boolean): Promise<AiTagResult[]> {
+    // The adult switch belongs in the cache key: the same query returns a
+    // different row set with it on, and a shared entry would leak adult rows
+    // into a safe request (or hide them from an adult one).
+    const key = JSON.stringify([query.toLowerCase(), limit, showNsfw]);
     const saved = cache.get(key);
     if (saved && now() < saved.expiresAt) return saved.results;
     let job = pending.get(key);
@@ -258,13 +280,18 @@ export function createAiTagSearch({
       }
       attempts++;
       // A disconnected caller must not cancel a shared request used by other agents.
-      job = remoteSearch(query, limit, AbortSignal.timeout(AI_REMOTE_TIMEOUT_MS)).then((data) => {
-        const rows: AiTagResult[] = data.results.slice(0, limit).map((item) => ({
+      job = remoteSearch(query, limit, showNsfw, AbortSignal.timeout(AI_REMOTE_TIMEOUT_MS)).then((data) => {
+        // `searchDanbooru` already filters adult rows when the switch is off;
+        // repeating it here keeps a custom transport from leaking them.
+        const source = showNsfw
+          ? data.results
+          : data.results.filter((item) => !isDanbooruNsfw(item.nsfw));
+        const rows: AiTagResult[] = source.slice(0, limit).map((item) => ({
           id: item.tag, tag: normalizePromptTagName(item.tag), zh: item.cn_name,
           aliases: item.alias_from ? [item.alias_from] : [],
           category: item.category, category_name: item.category, group: "",
           note: item.wiki || null, match: "semantic", source: "danbooru",
-          filled_fields: [], images: null,
+          filled_fields: [], adult: isDanbooruNsfw(item.nsfw), images: null,
         }));
         if (cache.size >= 100) cache.delete(cache.keys().next().value!);
         cache.set(key, { results: rows, expiresAt: now() + AI_REMOTE_CACHE_TTL });
@@ -283,7 +310,7 @@ export function createAiTagSearch({
       : loadIndex().then((index) => index(input));
     const remoteJob: Promise<AiTagResult[] | null> = input.source === "local"
       ? Promise.resolve(null)
-      : searchRemote(input.query, input.limit).catch((error) => {
+      : searchRemote(input.query, input.limit, input.show_nsfw).catch((error) => {
         // An explicit Danbooru-only search must still report the failure, while
         // the combined mode keeps serving the local half instead of failing.
         if (input.source === "danbooru") throw error;
@@ -312,7 +339,7 @@ export function createAiTagSearch({
       if (basedOn.length === 0) {
         return { basedOn, artists: [], sameCategory: [], related: [] };
       }
-      const data = await fetchRecommendations({ tags: basedOn, categories }, signal);
+      const data = await fetchRecommendations({ tags: basedOn, categories, show_nsfw: input.show_nsfw }, signal);
       if (!data) {
         unavailable.push("recommendations");
         return { basedOn, artists: [], sameCategory: [], related: [] };

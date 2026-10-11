@@ -45,12 +45,19 @@ describe("read-only AI tag lookup", () => {
     expect(local("御坂", { limit: 1, offset: 1 }).results).toHaveLength(1);
     expect(local("御坂", { direction: "tag-to-zh" }).results).toEqual([]);
     expect(local("no-such-tag").results).toEqual([]);
+    // The adult row is indexed but invisible until the caller opts in.
     expect(local("hidden_tag").results).toEqual([]);
+    expect(local("hidden_tag", { show_nsfw: true }).results[0]).toMatchObject({
+      tag: "hidden_tag", category: "r18", adult: true, source: "local", match: "exact",
+    });
+    // Opting in widens rather than replaces: the general rows stay reachable.
+    expect(local("misaka_mikoto", { show_nsfw: true }).results[0].adult).toBe(false);
   });
   test("strictly bounds input and rejects unexpected remote controls", () => {
     expect(parseAiSearchInput({ query: "x" })).toMatchObject({
-      source: "all", images: AI_TAG_IMAGE_DEFAULT, recommend: true, offset: 0, limit: 20,
+      source: "all", images: AI_TAG_IMAGE_DEFAULT, recommend: true, offset: 0, limit: 20, show_nsfw: false,
     });
+    expect(parseAiSearchInput({ query: "x", show_nsfw: true })).toMatchObject({ show_nsfw: true });
     for (const input of [
       null, {}, { query: "" }, { query: "{}" }, { query: "x".repeat(301) },
       { query: "x", limit: 0 }, { query: "x", limit: 51 }, { query: "x", limit: "2" },
@@ -58,10 +65,11 @@ describe("read-only AI tag lookup", () => {
       { query: "x", images: -1 }, { query: "x", images: 51 }, { query: "x", images: 1.5 },
       { query: "x", images: "2" }, { query: "x", images: true },
       { query: "x", recommend: 1 }, { query: "x", recommend: "1" },
+      { query: "x", show_nsfw: 1 }, { query: "x", show_nsfw: "1" }, { query: "x", show_nsfw: "true" },
       { query: "x", source: "remote" }, { query: "x", source: "danbooru", offset: 1 },
       { query: "x", apiKey: "secret" },
       { query: "x", direction: ["auto"] }, { query: "x", source: ["local"] },
-      { query: "x", url: "https://evil.test" }, { query: "x", show_nsfw: true },
+      { query: "x", url: "https://evil.test" },
     ]) expect(() => parseAiSearchInput(input)).toThrow();
   });
   test("completes matching local rows with Danbooru data instead of dropping them", async () => {
@@ -180,13 +188,13 @@ describe("merged recommendations", () => {
     results: [{ ...remoteData.results[0], tag: "white_serafuku", category: "Character" }],
   };
   test("bases recommendations on the merged tags and the Danbooru categories", async () => {
-    const asked: Array<{ tags: string[]; categories: string[] }> = [];
+    const asked: Array<{ tags: string[]; categories: string[]; show_nsfw: boolean }> = [];
     const search = createAiTagSearch({
       loadIndex: async () => index, remoteSearch: async () => characterRemote,
       fetchRecommendations: async (input) => { asked.push(input); return recommendationData; },
     });
     const result = await search(parseAiSearchInput({ query: "misaka_mikoto", images: 0 }), signal());
-    expect(asked).toEqual([{ tags: ["misaka_mikoto", "white_serafuku"], categories: ["Character"] }]);
+    expect(asked).toEqual([{ tags: ["misaka_mikoto", "white_serafuku"], categories: ["Character"], show_nsfw: false }]);
     expect(result.recommendations).toEqual({
       basedOn: ["misaka_mikoto", "white_serafuku"],
       artists: recommendationData.artists,
@@ -217,14 +225,14 @@ describe("merged recommendations", () => {
     expect(calls).toBe(0);
   });
   test("local-only lookups still recommend from the merged tags using the mapped category", async () => {
-    const asked: Array<{ tags: string[]; categories: string[] }> = [];
+    const asked: Array<{ tags: string[]; categories: string[]; show_nsfw: boolean }> = [];
     const search = createAiTagSearch({
       loadIndex: async () => index, remoteSearch: async () => remoteData,
       fetchRecommendations: async (input) => { asked.push(input); return recommendationData; },
     });
     const result = await search(parseAiSearchInput({ query: "misaka_mikoto", source: "local", images: 0 }), signal());
     // characters maps onto Danbooru's Character so "same category" stays usable.
-    expect(asked).toEqual([{ tags: ["misaka_mikoto"], categories: ["Character"] }]);
+    expect(asked).toEqual([{ tags: ["misaka_mikoto"], categories: ["Character"], show_nsfw: false }]);
     expect(result.recommendations).toEqual({
       basedOn: ["misaka_mikoto"],
       artists: recommendationData.artists,
@@ -232,6 +240,77 @@ describe("merged recommendations", () => {
       related: recommendationData.related,
     });
     expect(result.counts).toEqual({ local: 1, danbooru: 0, merged: 0 });
+  });
+});
+
+describe("opt-in adult results", () => {
+  const nsfwRemote = {
+    ...remoteData,
+    results: [
+      { ...remoteData.results[0], tag: "explicit_tag", nsfw: "1", category: "General" },
+      { ...remoteData.results[0], tag: "safe_tag", nsfw: "0", category: "General" },
+    ],
+  };
+  test("off by default: a nsfw row from the transport never reaches the caller", async () => {
+    const asked: boolean[] = [];
+    const search = createAiTagSearch({
+      loadIndex: async () => index,
+      remoteSearch: async (_query, _limit, showNsfw) => { asked.push(showNsfw); return nsfwRemote; },
+    });
+    const safe = await search(parseAiSearchInput({ query: "x", source: "danbooru", images: 0 }), signal());
+    expect(asked).toEqual([false]);
+    expect(safe.results.map((item) => item.tag)).toEqual(["safe_tag"]);
+    expect(safe.results.every((item) => item.adult === false)).toBe(true);
+
+    const adult = await search(parseAiSearchInput({ query: "x", source: "danbooru", images: 0, show_nsfw: true }), signal());
+    expect(asked).toEqual([false, true]);
+    expect(adult.results.map((item) => [item.tag, item.adult])).toEqual([
+      ["explicit_tag", true], ["safe_tag", false],
+    ]);
+  });
+  test("safe and adult answers never share a cached page", async () => {
+    let calls = 0;
+    const search = createAiTagSearch({
+      loadIndex: async () => index,
+      remoteSearch: async () => { calls++; return nsfwRemote; },
+    });
+    const run = (show_nsfw: boolean) =>
+      search(parseAiSearchInput({ query: "x", source: "danbooru", images: 0, show_nsfw }), signal());
+    expect((await run(false)).results.map((item) => item.tag)).toEqual(["safe_tag"]);
+    expect((await run(true)).results.map((item) => item.tag)).toEqual(["explicit_tag", "safe_tag"]);
+    // The safe page is still the cached safe page, not the adult one.
+    expect((await run(false)).results.map((item) => item.tag)).toEqual(["safe_tag"]);
+    expect(calls).toBe(2);
+  });
+  test("enriches each row at its own rating gate", async () => {
+    const asked: Array<[string, boolean]> = [];
+    const search = createAiTagSearch({
+      loadIndex: async () => index, remoteSearch: async () => nsfwRemote,
+      enrichImages: async (results, count) => {
+        for (const [position, result] of results.entries()) {
+          if (position < count) asked.push([result.tag, result.adult]);
+        }
+        return results.map(() => null);
+      },
+    });
+    await search(parseAiSearchInput({ query: "x", source: "danbooru", images: 2, show_nsfw: true }), signal());
+    expect(asked).toEqual([["explicit_tag", true], ["safe_tag", false]]);
+  });
+  test("HTTP accepts show_nsfw=1 and keeps the adult response out of shared caches", async () => {
+    const search = createAiTagSearch({ loadIndex: async () => index, remoteSearch: async () => remoteData });
+    const safe = await handleAiTagSearch(new Request(
+      "https://site.test/api/ai/tags?query=hidden_tag&source=local&images=0",
+    ), search);
+    expect((await safe.json()).results).toEqual([]);
+    expect(safe.headers.get("cache-control")).toContain("max-age=300");
+
+    const adult = await handleAiTagSearch(new Request(
+      "https://site.test/api/ai/tags?query=hidden_tag&source=local&images=0&show_nsfw=1",
+    ), search);
+    const body = await adult.json();
+    expect(body.show_nsfw).toBe(true);
+    expect(body.results.map((item) => [item.tag, item.adult])).toEqual([["hidden_tag", true]]);
+    expect(adult.headers.get("cache-control")).toBe("private, no-store");
   });
 });
 

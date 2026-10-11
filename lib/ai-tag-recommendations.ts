@@ -7,7 +7,7 @@ export const AI_RECOMMENDATION_MAX_CONCURRENCY = 2;
 export const AI_RECOMMENDATION_TIMEOUT_MS = 30_000;
 const CACHE_MAX_ENTRIES = 100;
 
-export type AiRecommendationQuery = { tags: string[]; categories: string[] };
+export type AiRecommendationQuery = { tags: string[]; categories: string[]; show_nsfw: boolean };
 
 /**
  * Server-side cache and public-pool budget for the AI recommendation lookups.
@@ -32,7 +32,9 @@ export function createAiRecommendations({
     input: AiRecommendationQuery,
   ): Promise<DanbooruRecommendationData | null> {
     if (input.tags.length === 0) return null;
-    const key = JSON.stringify([[...input.tags].sort(), [...input.categories].sort()]);
+    // The adult switch is part of the identity: the same basis returns a
+    // different bucket with it on, so the two answers must not share an entry.
+    const key = JSON.stringify([[...input.tags].sort(), [...input.categories].sort(), input.show_nsfw]);
     const saved = cache.get(key);
     if (saved && now() < saved.expiresAt) return saved.data;
     let job = pending.get(key);

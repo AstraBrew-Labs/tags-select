@@ -38,24 +38,28 @@ describe("portable AI documents and download URLs", () => {
     expect(byName("source")?.schema).toMatchObject({ enum: ["all", "local", "danbooru"], default: "all" });
     expect(byName("images")?.schema).toMatchObject({ minimum: 0, maximum: 50, default: 8 });
     expect(byName("recommend")?.schema).toMatchObject({ type: "boolean", default: true });
+    expect(byName("show_nsfw")?.schema).toMatchObject({ type: "boolean", default: false });
     const response = spec.paths["/api/ai/tags"].get.responses["200"].content["application/json"];
     const result = response.schema.properties.results.items;
     expect(result.required).toContain("images");
     expect(result.required).toContain("source");
     expect(result.required).toContain("filled_fields");
+    expect(result.required).toContain("adult");
     expect(result.properties.source.enum).toEqual(["local", "danbooru", "local+danbooru"]);
     expect(Object.keys(result.properties.images.properties)).toEqual(["preview", "sample", "original"]);
-    expect(response.schema.required).toEqual(expect.arrayContaining(["counts", "unavailable", "recommendations", "recommend"]));
+    expect(response.schema.required).toEqual(expect.arrayContaining(["counts", "unavailable", "recommendations", "recommend", "show_nsfw"]));
+    expect(response.schema.properties.show_nsfw).toMatchObject({ type: "boolean" });
     expect(response.schema.properties.counts.required).toEqual(["local", "danbooru", "merged"]);
     expect(response.schema.properties.unavailable.items.enum).toEqual(["danbooru", "recommendations"]);
     expect(Object.keys(response.schema.properties.recommendations.properties)).toEqual(["basedOn", "artists", "sameCategory", "related"]);
-    expect(spec.info.version).toBe("1.4.0");
+    expect(spec.info.version).toBe("1.5.0");
     expect(response.example).toMatchObject({
-      images: 8, recommend: true, source: "all",
+      images: 8, recommend: true, show_nsfw: false, source: "all",
       counts: { local: 1, danbooru: 1, merged: 1 }, unavailable: [],
     });
     expect(response.example.results.map((item) => item.source)).toEqual(["local+danbooru", "danbooru"]);
     expect(response.example.results[0].filled_fields).toEqual(["note"]);
+    expect(response.example.results.map((item) => item.adult)).toEqual([false, false]);
     expect(Object.keys(response.example.results[0].images)).toEqual(["preview", "sample", "original"]);
     expect(response.example.recommendations.basedOn).toHaveLength(2);
   });
@@ -67,6 +71,17 @@ describe("portable AI documents and download URLs", () => {
       expect(document).not.toContain("/api/ai/images");
       expect(document).not.toContain("get_tag_image");
     }
+  });
+  test("documents the opt-in adult switch as default-off on every surface", () => {
+    for (const document of [buildAiDocument("markdown", "https://api.test"), buildAiDocument("text", "https://api.test"), buildAiSkill("https://api.test")]) {
+      expect(document).toContain("show_nsfw");
+      expect(document).toContain("adult");
+      // The old blanket "general audience only" claim must be gone.
+      expect(document).not.toContain("仅开放普通标签");
+      expect(document).not.toContain("exposes general-audience tags");
+    }
+    const spec = buildAiOpenApi("https://api.test");
+    expect(spec.info.description).toContain("show_nsfw=true");
   });
   test("documents the three prompt-format specifications and their required qwen mode", () => {
     for (const document of [buildAiDocument("markdown", "https://api.test"), buildAiDocument("text", "https://api.test"), buildAiSkill("https://api.test")]) {

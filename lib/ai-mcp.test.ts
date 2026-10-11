@@ -37,6 +37,10 @@ describe("real read-only MCP protocol", () => {
         "get_anima_format", "get_newbie_format", "get_qwen_image_format",
       ]);
       for (const tool of tools) expect(tool.annotations?.readOnlyHint).toBe(true);
+      // Every search tool advertises the opt-in adult switch; the format tools do not.
+      for (const tool of tools.filter((item) => item.name.startsWith("search"))) {
+        expect(JSON.stringify(tool.inputSchema)).toContain("show_nsfw");
+      }
       const combined = await client.callTool({ name: "search_all_tags", arguments: { query: "御坂美琴", images: 0, recommend: false } });
       expect(combined.isError).not.toBe(true);
       expect(combined.structuredContent).toMatchObject({ source: "all", images: 0, recommend: false });

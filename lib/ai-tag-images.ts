@@ -21,7 +21,7 @@ export function resolveAiImageTag(value: string): string | null {
   );
 }
 
-export type AiTagImageEnricher = <T extends { tag: string }>(
+export type AiTagImageEnricher = <T extends { tag: string; adult?: boolean }>(
   results: readonly T[],
   count: number,
   signal: AbortSignal,
@@ -31,12 +31,15 @@ export type AiTagImageEnricher = <T extends { tag: string }>(
  * Attaches at most `count` example images to the front of a ranked result page.
  * Images are a best-effort enrichment: a failed, blocked or rate-limited lookup
  * resolves to `null` so the text results are always returned unchanged.
+ * Each result carries its own adult flag, so an adult row is looked up without
+ * the `rating:g` filter while every safe row keeps the general-only gate — in
+ * the same page, without a page-wide mode.
  */
 export function createAiTagImageEnricher({
   loadSizes,
   now = Date.now,
 }: {
-  loadSizes: (tag: string) => Promise<DanbooruImageSizes | null>;
+  loadSizes: (tag: string, options?: { adult?: boolean }) => Promise<DanbooruImageSizes | null>;
   now?: () => number;
 }): AiTagImageEnricher {
   let windowStart = 0;
@@ -65,7 +68,7 @@ export function createAiTagImageEnricher({
         const tag = resolveAiImageTag(results[index].tag);
         if (!tag) continue;
         try {
-          sizes[index] = await loadSizes(tag);
+          sizes[index] = await loadSizes(tag, { adult: results[index].adult === true });
         } catch {
           sizes[index] = null;
         }

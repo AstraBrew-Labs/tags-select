@@ -17,6 +17,9 @@ export function createAiMcpServer(origin: string, search: Search, signal: AbortS
   const direction = z.enum(["auto", "tag-to-zh", "zh-to-tag"]).default("auto");
   const images = z.number().int().min(0).max(AI_SEARCH_LIMIT).default(AI_TAG_IMAGE_DEFAULT);
   const recommend = z.boolean().default(true);
+  const showNsfw = z.boolean().default(false).describe(
+    "Opt in to adult results: local r18 rows, Danbooru rows flagged nsfw and adult-rated example images. Off by default; only set it when the user asked for adult tags and is an adult.",
+  );
   async function run(input: Record<string, unknown>) {
     try {
       const result = await search(parseAiSearchInput(input), signal);
@@ -28,21 +31,21 @@ export function createAiMcpServer(origin: string, search: Search, signal: AbortS
   }
   server.registerTool("search_all_tags", {
     title: "本地 + Danbooru 合并搜索与推荐",
-    description: "Preferred one-call lookup: merge the local dictionary with Danbooru semantic matches, then add recommended artists, same-category and related tags plus inline example images. Uses the anonymous shared Danbooru quota, so it can be slower and rate limited; `unavailable` lists any part that failed.",
-    inputSchema: z.object({ query, direction, limit, offset: z.number().int().min(0).max(10_000).default(0), images, recommend }).strict(),
+    description: "Preferred one-call lookup: merge the local dictionary with Danbooru semantic matches, then add recommended artists, same-category and related tags plus inline example images. Uses the anonymous shared Danbooru quota, so it can be slower and rate limited; `unavailable` lists any part that failed. `show_nsfw` opts in to adult rows and adult-rated example images; it is off by default and only for an adult user who asked for them.",
+    inputSchema: z.object({ query, direction, limit, offset: z.number().int().min(0).max(10_000).default(0), images, recommend, show_nsfw: showNsfw }).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }, (input) => run({ ...input, source: "all" }));
   server.registerTool("search_tags", {
     title: "本地 Tags 中英互查",
-    description: "Local-only dictionary lookup by English tag, Chinese meaning or alias. Exact matches first. Stays at zero remote quota (no recommendations, which need Danbooru); use search_all_tags for semantic matches plus recommendations.",
-    inputSchema: z.object({ query, direction, limit, offset: z.number().int().min(0).max(10_000).default(0), images }).strict(),
+    description: "Local-only dictionary lookup by English tag, Chinese meaning or alias. Exact matches first. Stays at zero remote quota (no recommendations, which need Danbooru); use search_all_tags for semantic matches plus recommendations. `show_nsfw` also unlocks the local r18 rows; it is off by default.",
+    inputSchema: z.object({ query, direction, limit, offset: z.number().int().min(0).max(10_000).default(0), images, show_nsfw: showNsfw }).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     // Recommendations always need the public Danbooru pool, so this tool opts out.
   }, (input) => run({ ...input, source: "local", recommend: false }));
   server.registerTool("search_danbooru_tags", {
     title: "Danbooru 公共语义搜索",
-    description: "Explicit Danbooru-only semantic search using anonymous shared quota only, never a private key. Successes cached for one day. May be rate limited; prefer search_all_tags.",
-    inputSchema: z.object({ query, limit, images, recommend }).strict(),
+    description: "Explicit Danbooru-only semantic search using anonymous shared quota only, never a private key. Successes cached for one day. May be rate limited; prefer search_all_tags. `show_nsfw` asks the upstream for adult rows and is off by default.",
+    inputSchema: z.object({ query, limit, images, recommend, show_nsfw: showNsfw }).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }, (input) => run({ ...input, source: "danbooru" }));
   async function format(name: AiPromptFormatName, value?: string) {

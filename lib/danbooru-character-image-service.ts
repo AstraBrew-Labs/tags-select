@@ -43,12 +43,16 @@ function hasBlockedCharacterTag(post: Record<string, unknown>) {
   });
 }
 
-/** One general-rating post becomes up to three official Danbooru sizes. */
-function imageSizesFromPost(value: unknown): DanbooruImageSizes | null {
+/** One post becomes up to three official Danbooru sizes. Safe mode accepts the
+ * general rating only; `adult` is the AI search's explicit opt-in, where the
+ * query drops the `rating:g` filter and sensitive / questionable / explicit
+ * posts are allowed. */
+function imageSizesFromPost(value: unknown, adult = false): DanbooruImageSizes | null {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return null;
   const post = value as Record<string, unknown>;
-  if (post.rating !== "g") return null;
+  const rating = typeof post.rating === "string" ? post.rating.toLowerCase() : "";
+  if (adult ? !["g", "s", "q", "e"].includes(rating) : rating !== "g") return null;
   if (hasBlockedCharacterTag(post)) return null;
   const pick = (key: string) => (isCharacterImageUrl(post[key]) ? post[key] : null);
   const sizes: DanbooruImageSizes = {
@@ -94,23 +98,27 @@ export function createCharacterImageService({
   async function resolveSizes(
     rawTag: string,
     requestSignal?: AbortSignal,
-    { refresh = false }: { refresh?: boolean } = {},
+    { refresh = false, adult = false }: { refresh?: boolean; adult?: boolean } = {},
   ): Promise<ResolvedImage> {
     const tag = resolveValidCharacterImageTag(rawTag);
     if (!tag) throw new Error("标签格式无效。");
-    const existing = pending.get(tag);
+    // Adult lookups must never share an entry with the safe pipeline: the same
+    // tag can resolve to a different post, and a shared slot would either serve
+    // a general image to an adult caller or (worse) an adult one to a safe one.
+    const cacheKey = adult ? `nsfw:${tag}` : tag;
+    const existing = pending.get(cacheKey);
     if (existing && (!refresh || existing.refresh)) return existing.promise;
     const currentTime = now();
-    const remembered = cache.get(tag);
+    const remembered = cache.get(cacheKey);
     if (!refresh && isFreshCachedImage(remembered, currentTime)) {
       return { tag, sizes: remembered.sizes, cached: true, cachedAt: remembered.cachedAt };
     }
-    const id = Symbol(tag);
+    const id = Symbol(cacheKey);
     const promise = (async () => {
       const url = new URL("https://danbooru.donmai.us/posts.json");
       url.searchParams.set(
         "tags",
-        [tag, "rating:g", ...BLOCKED_TAG_FILTERS].join(" "),
+        [tag, ...(adult ? [] : ["rating:g"]), ...BLOCKED_TAG_FILTERS].join(" "),
       );
       url.searchParams.set("limit", "1");
       url.searchParams.set(
@@ -138,19 +146,19 @@ export function createCharacterImageService({
       const posts: unknown = await response.json();
       if (!Array.isArray(posts))
         throw new Error("Danbooru 图片服务返回的数据格式不正确。");
-      const sizes = imageSizesFromPost(posts[0]);
+      const sizes = imageSizesFromPost(posts[0], adult);
       const result: ResolvedImage = { tag, sizes, cachedAt: now(), cached: false };
       // A refresh can supersede an older request still awaiting Danbooru.
-      if (pending.get(tag)?.id === id) {
-        cache.set(tag, { cachedAt: result.cachedAt, sizes });
+      if (pending.get(cacheKey)?.id === id) {
+        cache.set(cacheKey, { cachedAt: result.cachedAt, sizes });
         if (cache.size > CHARACTER_IMAGE_CACHE_MAX_ENTRIES)
           cache.delete(cache.keys().next().value!);
       }
       return result;
     })().finally(() => {
-      if (pending.get(tag)?.id === id) pending.delete(tag);
+      if (pending.get(cacheKey)?.id === id) pending.delete(cacheKey);
     });
-    pending.set(tag, { id, refresh, promise });
+    pending.set(cacheKey, { id, refresh, promise });
     return promise;
   }
 
@@ -167,11 +175,14 @@ export function createCharacterImageService({
     return { tag, imageUrl: preferredImageUrl(sizes), cached, cachedAt };
   }
 
-  /** Multi-size lookup for the AI search path; the cache is shared with load. */
+  /** Multi-size lookup for the AI search path; the cache is shared with load,
+   * except that an adult lookup gets its own slot so the safe pipeline and the
+   * opt-in adult mode can never serve each other's post. */
   async function loadSizes(
     rawTag: string,
+    { adult = false }: { adult?: boolean } = {},
   ): Promise<{ tag: string; sizes: DanbooruImageSizes | null; cached: boolean }> {
-    const { tag, sizes, cached } = await resolveSizes(rawTag);
+    const { tag, sizes, cached } = await resolveSizes(rawTag, undefined, { adult });
     return { tag, sizes, cached };
   }
 

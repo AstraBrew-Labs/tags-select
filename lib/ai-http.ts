@@ -7,12 +7,12 @@ export const AI_CORS_HEADERS = {
   "X-Robots-Tag": "noindex",
 };
 
-/** Query strings arrive as text; numbers and the 0/1 boolean must be typed
+/** Query strings arrive as text; numbers and the 0/1 booleans must be typed
  * before validation so malformed values are still rejected instead of coerced. */
 function queryValue(key: string, value: string): unknown {
   if (["limit", "offset", "images"].includes(key))
     return /^\d+$/.test(value) ? Number(value) : value;
-  if (key === "recommend")
+  if (key === "recommend" || key === "show_nsfw")
     return value === "1" ? true : value === "0" ? false : value;
   return value;
 }
@@ -31,7 +31,14 @@ export async function handleAiTagSearch(
     ));
     const data = await search(input, request.signal);
     return Response.json(data, {
-      headers: { ...AI_CORS_HEADERS, "Cache-Control": "public, max-age=300, stale-while-revalidate=3600" },
+      headers: {
+        ...AI_CORS_HEADERS,
+        // Adult results never go into a shared cache: the switch is part of the
+        // URL, but a proxy that ignored the query string must not serve them.
+        "Cache-Control": input.show_nsfw
+          ? "private, no-store"
+          : "public, max-age=300, stale-while-revalidate=3600",
+      },
     });
   } catch (error) {
     const status = error instanceof AiSearchError ? error.status : request.signal.aborted ? 499 : 503;
