@@ -162,6 +162,140 @@ a:focus-visible,
   border-radius: 12px;
 }
 
+.ai-search {
+  padding: 20px 0 32px;
+  min-width: 0;
+}
+.ai-search-heading,
+.ai-document-toolbar,
+.ai-document-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ai-search-heading h2 {
+  font-size: 22px;
+  letter-spacing: 0;
+}
+.ai-readonly-label {
+  color: var(--app-green-ink);
+  font-size: 12px;
+}
+.ai-endpoints {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.ai-endpoints > div {
+  min-width: 0;
+}
+.ai-endpoints dt {
+  font-size: 12px;
+  color: var(--app-ink-soft);
+  margin-bottom: 6px;
+}
+.ai-endpoints dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+.ai-endpoints a,
+.ai-document-url {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ai-document-toolbar {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--animal-border-color-light);
+  padding: 8px 0 12px;
+}
+.ai-document-tabs {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.ai-document-tabs > [role="tablist"] {
+  overflow-x: auto;
+  padding: 8px 0;
+  background: transparent;
+}
+.ai-document-tabs [role="tab"] {
+  flex-shrink: 0;
+  min-height: 44px;
+  white-space: nowrap;
+}
+.ai-document-tabs > [role="tabpanel"] {
+  min-height: 0;
+  padding: 16px 0;
+}
+.ai-document-url {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+.ai-document-actions {
+  flex-shrink: 0;
+  gap: 4px;
+}
+.ai-document-actions button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+.ai-document-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+  max-height: 540px;
+  margin: 16px 0 0;
+  padding: 16px;
+  border: 1px solid var(--animal-border-color-light);
+  border-radius: 8px;
+  background: var(--app-surface);
+  font: 13px/1.8 ui-monospace, "PingFang SC", monospace;
+  letter-spacing: 0;
+}
+
+@media (max-width: 680px) {
+  .ai-endpoints {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .ai-document-toolbar {
+    flex-wrap: wrap;
+  }
+  .ai-document-actions {
+    margin-left: auto;
+  }
+  .ai-document-preview {
+    padding: 12px;
+    max-height: 480px;
+  }
+}
+@media (max-width: 420px) {
+  .site-header {
+    flex-wrap: wrap;
+    padding-block: 12px;
+  }
+  .site-header .header-nav {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .site-header .header-nav > button {
+    width: auto;
+    min-height: 44px;
+    font-size: 11px;
+    gap: 4px;
+  }
+  .site-header .header-nav > button svg {
+    width: 17px;
+    height: 17px;
+  }
+}
+
 /* Search layout only; Cards, Inputs, Buttons and Tags keep native UI styles. */
 .danbooru-search {
   padding-top: 8px;

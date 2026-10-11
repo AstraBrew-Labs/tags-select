@@ -7,6 +7,7 @@ import { MotionConfig } from "motion/react";
 import {
   BookmarkIcon,
   BookIcon,
+  CodeIcon,
   ChevronRightIcon,
   FlowerIcon,
   GridIcon,
@@ -34,6 +35,7 @@ import { useNotification } from "../lib/use-notification";
 import TagCard from "./tag-card";
 import PromptLookup from "./prompt-lookup";
 import DanbooruSearch from "./danbooru-search";
+import AiSearch from "./ai-search";
 import DirectorCodex, { INITIAL_CODEX_VIEW, type CodexView } from "./director-codex";
 import AdultCodex, {
   INITIAL_ADULT_CODEX_VIEW,
@@ -102,7 +104,7 @@ export default function TagSelector() {
   const [tagFilter, setTagFilter] = useState<TagFilter>("all");
   const [sort, setSort] = useState("recommended");
   const [feature, setFeature] = useState("generate");
-  const [workspaceView, setWorkspaceView] = useState<"discover" | "search">(
+  const [workspaceView, setWorkspaceView] = useState<"discover" | "search" | "ai">(
     "discover",
   );
   const [lookupInput, setLookupInput] = useState("");
@@ -267,6 +269,8 @@ export default function TagSelector() {
               className={workspaceView === "discover" ? "nav-current" : ""}
               aria-pressed={workspaceView === "discover"}
               icon={<GridIcon {...iconProps} size={17} />}
+              aria-label="发现标签"
+              title="发现标签"
               onClick={showAllTags}
             >
               发现标签
@@ -276,14 +280,29 @@ export default function TagSelector() {
               className={workspaceView === "search" ? "nav-current" : ""}
               aria-pressed={workspaceView === "search"}
               icon={<SearchIcon {...iconProps} size={17} />}
+              aria-label="搜索标签"
+              title="搜索标签"
               onClick={() => setWorkspaceView("search")}
             >
               搜索标签
+            </Button>
+            <Button
+              type="text"
+              className={workspaceView === "ai" ? "nav-current" : ""}
+              aria-pressed={workspaceView === "ai"}
+              aria-label="AI 搜索"
+              title="AI 搜索"
+              icon={<CodeIcon {...iconProps} size={18} />}
+              onClick={() => setWorkspaceView("ai")}
+            >
+              AI 搜索
             </Button>
             <span className="nav-divider" />
             <Button
               type="text"
               icon={<HelpCircleIcon {...iconProps} size={18} />}
+              aria-label="使用指南"
+              title="使用指南"
               onClick={() => setDialog("help")}
             >
               使用指南
@@ -332,6 +351,7 @@ export default function TagSelector() {
           </section>
 
           <div id="tag-workspace">
+            {workspaceView === "ai" && <AiSearch />}
             <div hidden={workspaceView !== "search"}>
               <DanbooruSearch />
             </div>

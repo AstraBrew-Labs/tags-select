@@ -51,6 +51,16 @@ export default function UsageGuide() {
           </li>
         </ol>
       </section>
+      <section aria-labelledby="guide-ai">
+        <h3 id="guide-ai">AI 搜索</h3>
+        <p>
+          顶部“AI 搜索”提供 llm.txt、llm.md、Skill、MCP 配置与 OpenAPI；
+          可复制文件内容或 URL，也可下载后交给支持相应格式的 AI 客户端。
+          只读接口支持英文 Tag 查中文、中文查 Tags，默认查本站普通标签目录。
+          显式选择 Danbooru 搜索时使用公共额度，不使用本站私有 Key；
+          公共服务可能限流或不可用，不会自动改用私有额度。
+        </p>
+      </section>
       <section aria-labelledby="guide-source">
         <h3 id="guide-source">数据来源与隐私</h3>
         <p>

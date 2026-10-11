@@ -7,6 +7,7 @@
     "build": "bun run data:build && prisma generate && next build",
     "data:build": "bun run scripts/build-local-catalogs.ts",
     "seo:build": "bun run scripts/build-seo-assets.ts",
+    "ai:build": "bun run scripts/build-ai-skill.ts",
     "start": "next start",
     "lint": "eslint",
     "test": "bun test",
@@ -24,6 +25,7 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "animal-island-ui": "^2.1.1",
@@ -36,7 +38,8 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "server-only": "^0.0.1",
-    "undici": "^7"
+    "undici": "^7",
+    "zod": "^4"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

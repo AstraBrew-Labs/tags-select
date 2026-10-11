@@ -36,6 +36,24 @@ function waitForAbort(_url: string, init: RequestInit) {
 }
 
 describe("domestic-first Danbooru proxy", () => {
+  test("public AI quota tries anonymous fallback and ignores even a supplied private key", async () => {
+    const { fetcher, calls } = makeFetcher((url) =>
+      url === DANBOORU_NODES[0].url ? unavailable() : good(),
+    );
+    const response = await handleDanbooruSearch(request(), {
+      quota: "public", apiKey: "private-key-must-never-be-sent", fetcher,
+    });
+    expect(response.status).toBe(200);
+    expect((await response.json()).node).toBe("international");
+    expect(calls).toHaveLength(2);
+    for (const { init } of calls) {
+      const headers = new Headers(init.headers);
+      expect(headers.has("authorization")).toBe(false);
+      expect(headers.has("X-DanbooruSearch-Client")).toBe(false);
+      expect(headers.has("X-DanbooruSearch-Site")).toBe(false);
+      expect(JSON.stringify(init)).not.toContain("private-key-must-never-be-sent");
+    }
+  });
   test("cleans weight syntax at the server boundary before calling either upstream node", async () => {
     const { fetcher, calls } = makeFetcher((url) =>
       url === DANBOORU_NODES[0].url ? unavailable() : good(),

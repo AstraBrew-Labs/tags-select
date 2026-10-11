@@ -16,6 +16,7 @@ describe("homepage server render", () => {
     expect(html.indexOf("提示词查找")).toBeLessThan(html.indexOf("所长的个人法典"));
     expect(html.indexOf("所长的个人法典")).toBeLessThan(html.indexOf("所长的成人法典"));
     expect(html).toContain("搜索标签");
+    expect(html).toContain('aria-label="AI 搜索"');
     expect(html).toContain("我的提示词");
     expect(html).toContain("发现你的灵感");
     expect(html).toContain("正在从数据库加载标签");

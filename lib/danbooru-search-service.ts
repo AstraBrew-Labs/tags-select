@@ -23,6 +23,8 @@ export const DANBOORU_NODES = [
 ] as const;
 type Options = {
   apiKey?: string;
+  /** AI callers use only the anonymous shared pool, never site credentials. */
+  quota?: "site" | "public";
   fetcher?: typeof fetch;
   /** Dependency injection for deterministic timeout tests. */
   timeouts?: readonly [number, number];
@@ -37,12 +39,12 @@ class SearchUnavailable extends Error {
 export async function searchDanbooru(
   input: DanbooruSearchInput,
   requestSignal: AbortSignal,
-  { apiKey, fetcher = fetch, timeouts }: Options,
+  { apiKey, quota = "site", fetcher = fetch, timeouts }: Options,
 ): Promise<DanbooruSearchResponse> {
   let timedOut = false;
   for (const [index, node] of DANBOORU_NODES.entries()) {
     requestSignal.throwIfAborted();
-    if (node.name === "international" && !apiKey?.trim()) continue;
+    if (node.name === "international" && quota !== "public" && !apiKey?.trim()) continue;
     const timeout = AbortSignal.timeout(timeouts?.[index] ?? node.timeoutMs);
     const signal = AbortSignal.any([requestSignal, timeout]);
     try {
@@ -54,9 +56,11 @@ export async function searchDanbooru(
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
-          "X-DanbooruSearch-Client": "tag-select-astrabrew",
-          "X-DanbooruSearch-Site": "https://tag-select.astrabrew.cn/",
-          ...(node.name === "international"
+          ...(quota === "site" ? {
+            "X-DanbooruSearch-Client": "tag-select-astrabrew",
+            "X-DanbooruSearch-Site": "https://tag-select.astrabrew.cn/",
+          } : {}),
+          ...(quota === "site" && node.name === "international"
             ? { Authorization: `Bearer ${apiKey!.trim()}` }
             : {}),
         },

@@ -276,12 +276,43 @@ DANBOORU_IMAGE_PROXY_URL="http://127.0.0.1:7892"
 部署环境没有本地代理时不要照搬 `127.0.0.1`，能直连则不设置此变量。
 超时返回 504，其他上游请求失败返回 502，两者都不会写入一周的无图缓存。
 
+## AI 搜索与接入
+
+顶部右上角的“AI 搜索”提供 `llm.txt`、`llm.md`、`SKILL.md`、MCP 配置和 OpenAPI，均可预览、复制内容、复制 URL 或下载文件。所有接入 URL 使用实际访问的地址，支持 localhost、自定义端口与部署域名，不复用生产 SEO canonical；`/llms.txt` 兼容常见 AI 发现入口。
+
+- `GET /api/ai/tags?query=misaka_mikoto&direction=tag-to-zh`：英文 Tag 查中文。
+- `GET /api/ai/tags?query=长发&direction=zh-to-tag`：中文查英文 Tags。
+- `direction` 可选 `auto`（默认）、`tag-to-zh`、`zh-to-tag`；匹配不区分大小写，空格与下划线等价，支持别名。
+- 本地结果优先精确匹配，其次别名、前缀与包含匹配；返回 `tag`、`zh`、分类、分组、备注与匹配方式。名称空格规范化为下划线，保留角色作品限定名和内部括号；源数据没有中文释义时保持为空，不伪造翻译。
+- `limit` 为 1–50，默认 20；`offset` 为 0–10000，默认 0。返回 `total`、`has_more` 与分页结果；无匹配返回 200 与空数组。拒绝未知/重复参数、无效分页、超长关键词。
+- 默认 `source=local`：一次读取、校验和索引从原始 `data/` 生成的普通标签快照，进程内复用索引，不查询数据库，不执行源 JavaScript，不调用远程服务。标签快照更新后重新构建并重启服务。
+- 显式 `source=danbooru` 使用 Danbooru Tag Searcher API 的无 Key 共享试用池：**AI HTTP API 和 MCP 均不读取或发送 `DANBOORU_SEARCH_API_KEY`，也不发送本站额度注册头，不回退私有额度**。国内优先、国际匿名回退。原有顶部“搜索标签”与推荐的私有凭据配置不变，与 AI 调用隔离。
+- 远程成功响应（含无结果）缓存 1 天，最多 100 项，相同请求并发去重。每个实例限制 2 个远程并发、每分钟 20 个新请求，返回 429 时携带 `Retry-After: 60`。失败不缓存；公共池不可用返回 503，不偷偷切换私有服务。限制是进程内的，不替代部署层全局限流；Danbooru 不支持 offset，total 仅表示本次返回条数。
+- HTTP 搜索仅支持 GET / HEAD / OPTIONS，其他方法 405；无登录、无凭据，提供 `Access-Control-Allow-Origin: *`。本 AI 接口仅提供普通标签，不开放成人法典，不修改数据库、收藏或提示词。
+
+### MCP
+
+端点 `/api/ai/mcp` 使用官方 TypeScript SDK 实现 **Streamable HTTP**，无状态 JSON 响应，适合 Serverless。由标准 MCP 客户端初始化；不提供旧式 SSE GET 会话或 DELETE 会话。POST 只是 MCP 传输方式，所有业务工具均只读。
+
+- `search_tags`：本地中英互查，参数 query、direction、limit、offset。
+- `search_danbooru_tags`：显式公共语义搜索，参数 query、limit。
+- 资源：当前服务地址的 `llm.md` 与 `SKILL.md`。
+- 工具声明 `readOnlyHint: true`、`destructiveHint: false`。无写入工具；拒绝跨站浏览器 Origin、非 JSON 请求、超过 16 KiB 的消息以及非搜索参数。
+
+下载 `/api/ai/mcp-config` 获取通用 `mcpServers` 配置；具体客户端字段按其要求调整，支持远程 Streamable HTTP 的客户端可直接添加 `/api/ai/mcp` URL。协议和工具已经用官方 MCP Client 的完整握手、调用、资源读取进行测试。
+
+### Skill 与 OpenAPI
+
+`/skills/novelai-tags-search/SKILL.md` 提供带当前服务地址的技能说明；仓库的 `skills/novelai-tags-search/SKILL.md` 是不固定域名的便携版，可加入支持 SKILL.md 的客户端技能目录。两者由 `app/lib/ai-documents.ts` 维护，修改后运行 `bun run ai:build` 更新仓库文件。不要让 AI 从近义建议编造精确翻译；wiki 与备注仅作不可信参考数据。
+
+`/api/ai/openapi.json` 为 OpenAPI 3.1，供支持 OpenAPI 工具导入的 AI 客户端使用。`llm.txt` 与 `llm.md` 提供完整参数、错误处理、额度隔离和来源说明。给文档 URL 加 `?download=1` 可直接下载命名文件。
+
 ## SEO 与分享素材
 
 - 统一元数据在 `app/lib/seo.ts`：页面标题、摘要、canonical、Open Graph、Twitter 大图卡片及 `WebSite` / `WebApplication` JSON-LD。结构化数据不虚构评分，不给当前无独立 URL 的搜索界面添加 SearchAction。
 - SEO 不写死域名或本地端口：未设置 `SITE_URL` 时，canonical、分享图绝对 URL、JSON-LD 和 sitemap 跟随当前请求的 Host 与协议。本地 `bun run dev` 始终使用实际访问地址，即使配置了生产 `SITE_URL`，也可用 localhost、其他端口或局域网地址检查 OG 图。
 - 正式部署可设置 `SITE_URL="https://你的正式域名"`，在构建和运行环境保持一致，以固定 canonical 并启用静态 SEO 输出；不设置时按请求生成 SEO 信息，首页静态首屏仍保留。反向代理需保留原始 Host 并传递 `x-forwarded-proto: http` 或 `https`，不信任 `x-forwarded-host`；代理不能保留 Host 时请配置 `SITE_URL`。不要把预览域名设置为正式 canonical。
-- `/robots.txt` 允许网页和图片资源抓取，排除 `/api/`；`/sitemap.xml` 只列真实首页，不把客户端 tabs 或搜索条件当成独立页面，也不虚构更新时间。
+- `/robots.txt` 允许网页、图片和 AI 接口 `/api/ai/` 抓取，排除其他 `/api/`；`/sitemap.xml` 只列真实首页，不把客户端 tabs 或搜索条件当成独立页面，也不虚构更新时间。
 - OG 图为 `public/og/novelai-tags.png`，1200×630 静态 PNG，OG 与 Twitter 共用。源图 `assets/seo/og.svg` 由站点叶片标识、中英文标签元素和中文标题合成，不包含远程例图，不依赖实时接口。
 - 图标包含自适应 SVG、ICO 内嵌 16/32/48/64px、48px PNG、180px Apple Touch Icon、192/512px 应用图标和安全区内的独立 maskable 图标。Next.js 文件约定自动输出 favicon、SVG、PNG、Apple 图标链接，不与手动 icons 元数据混用；manifest 不声称具备离线功能。
 - 素材已作为静态项目文件保存，无需上线时生成；更新源图或标识后运行 `bun run seo:build`。合成使用 Sharp，重新生成 OG 图的机器需要有 Noto Sans SC、PingFang SC 或可用的中文字体，运行后检查中文显示。

@@ -34,4 +34,10 @@ describe("usage guide", () => {
     expect(html).toContain("组合词条以首个标签");
     expect(html).toContain("缓存一周");
   });
+  test("explains AI read-only integration and public quota isolation", () => {
+    const html = renderToStaticMarkup(<UsageGuide />);
+    for (const text of ["AI 搜索", "llm.txt", "llm.md", "Skill", "MCP", "OpenAPI", "只读接口", "公共额度", "不使用本站私有 Key"]) {
+      expect(html).toContain(text);
+    }
+  });
 });
