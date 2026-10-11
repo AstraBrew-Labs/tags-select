@@ -15,6 +15,8 @@ export type CharacterImageResponse = {
   cachedAt: number;
 };
 
+export const CHARACTER_IMAGE_MAX_TAG_LENGTH = 200;
+
 export function normalizeCharacterTag(value: string) {
   return value.trim().replace(/\s+/g, "_").toLowerCase();
 }
@@ -25,6 +27,25 @@ export function resolveCharacterImageTag(value: string) {
   return tag === "jouga_maya_(gochuumon_wa_usagi_desu_ka?)"
     ? "jouga_maya"
     : tag;
+}
+
+/**
+ * Normalize and validate a single tag for an example-image lookup.
+ * Rejects empty, over-long, control-character, compound ("a,b") and search
+ * operator ("*", "-tag", "~tag", "rating:e") inputs so one tag can never
+ * override the general-rating filter of the upstream query.
+ */
+export function resolveValidCharacterImageTag(value: string): string | null {
+  const tag = resolveCharacterImageTag(value);
+  return (
+    tag.length > 0 &&
+    tag.length <= CHARACTER_IMAGE_MAX_TAG_LENGTH &&
+    !/[\u0000-\u001f\u007f]/.test(tag) &&
+    !/[,:*]/.test(tag) &&
+    !/^[-~]/.test(tag)
+  )
+    ? tag
+    : null;
 }
 
 /**
@@ -60,6 +81,27 @@ export function isCharacterImageUrl(value: unknown): value is string {
   } catch {
     return false;
   }
+}
+
+/**
+ * The official Danbooru sizes exposed to AI callers. `preview` is the 180×180
+ * square, `sample` is the ≤850px compressed copy and `original` is the source
+ * file. A missing size is `null`; the whole object is `null` when the post has
+ * no usable general-rating image at all.
+ */
+export type DanbooruImageSizes = {
+  preview: string | null;
+  sample: string | null;
+  original: string | null;
+};
+
+export function isDanbooruImageSizes(value: unknown): value is DanbooruImageSizes {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return false;
+  const sizes = value as Record<string, unknown>;
+  return (["preview", "sample", "original"] as const).every(
+    (key) => sizes[key] === null || isCharacterImageUrl(sizes[key]),
+  );
 }
 
 export function isFreshCharacterImage(

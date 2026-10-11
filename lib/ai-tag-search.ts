@@ -1,7 +1,9 @@
 import type { CatalogResponse } from "../app/lib/catalog-types";
 import { normalizePromptTagName } from "../app/lib/prompt-weights";
 import { preprocessPromptQuery } from "../app/lib/prompt-preprocessing";
+import type { DanbooruImageSizes } from "../app/lib/character-image-types";
 import type { DanbooruSearchResponse } from "../app/lib/danbooru-types";
+import { AI_TAG_IMAGE_DEFAULT } from "./ai-tag-images";
 
 export const AI_SEARCH_LIMIT = 50;
 export const AI_REMOTE_CACHE_TTL = 24 * 60 * 60_000;
@@ -11,6 +13,7 @@ export type AiSearchInput = {
   source: "local" | "danbooru";
   limit: number;
   offset: number;
+  images: number;
 };
 export type AiTagResult = {
   id: string;
@@ -22,6 +25,8 @@ export type AiTagResult = {
   group: string;
   note: string | null;
   match: "exact" | "alias" | "prefix" | "contains" | "semantic";
+  /** Inline official Danbooru example image sizes; null when none was attached. */
+  images: DanbooruImageSizes | null;
 };
 export type AiSearchResult = AiSearchInput & {
   total: number;
@@ -37,7 +42,7 @@ export function parseAiSearchInput(value: unknown): AiSearchInput {
     throw new AiSearchError("请提供搜索参数。", 400);
   }
   const input = value as Record<string, unknown>;
-  if (Object.keys(input).some((key) => !["query", "direction", "source", "limit", "offset"].includes(key))) {
+  if (Object.keys(input).some((key) => !["query", "direction", "source", "limit", "offset", "images"].includes(key))) {
     throw new AiSearchError("存在未知搜索参数。", 400);
   }
   if (typeof input.query !== "string" || !input.query.trim() || input.query.length > 300) {
@@ -49,16 +54,18 @@ export function parseAiSearchInput(value: unknown): AiSearchInput {
   const source = input.source ?? "local";
   const limit = input.limit ?? 20;
   const offset = input.offset ?? 0;
+  const images = input.images ?? AI_TAG_IMAGE_DEFAULT;
   if (typeof direction !== "string" || !["auto", "tag-to-zh", "zh-to-tag"].includes(direction) ||
       typeof source !== "string" || !["local", "danbooru"].includes(source) ||
       typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > AI_SEARCH_LIMIT ||
-      typeof offset !== "number" || !Number.isInteger(offset) || offset < 0 || offset > 10_000) {
-    throw new AiSearchError("direction/source 无效，limit 须为 1–50，offset 须为 0–10000 的整数。", 400);
+      typeof offset !== "number" || !Number.isInteger(offset) || offset < 0 || offset > 10_000 ||
+      typeof images !== "number" || !Number.isInteger(images) || images < 0 || images > AI_SEARCH_LIMIT) {
+    throw new AiSearchError("direction/source 无效，limit 须为 1–50，offset 须为 0–10000，images 须为 0–50 的整数。", 400);
   }
   if (source === "danbooru" && offset !== 0) {
     throw new AiSearchError("Danbooru 搜索不支持分页，offset 必须为 0。", 400);
   }
-  return { query, direction: direction as AiSearchInput["direction"], source: source as AiSearchInput["source"], limit, offset };
+  return { query, direction: direction as AiSearchInput["direction"], source: source as AiSearchInput["source"], limit, offset, images };
 }
 
 const normalize = (value: string) => value.trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ");
@@ -71,7 +78,7 @@ export function createAiTagIndex(catalog: CatalogResponse) {
       id: tag.id, tag: normalizePromptTagName(tag.en), zh: tag.zh,
       aliases: tag.aliases, category: tag.categoryId,
       category_name: categories.get(tag.categoryId) ?? tag.categoryId,
-      group: groups.get(tag.groupId) ?? "", note: tag.note,
+      group: groups.get(tag.groupId) ?? "", note: tag.note, images: null,
     },
     en: normalize(tag.en), zh: normalize(tag.zh), aliases: tag.aliases.map(normalize),
   }));
@@ -99,10 +106,12 @@ export function createAiTagIndex(catalog: CatalogResponse) {
 }
 
 export function createAiTagSearch({
-  loadIndex, remoteSearch, now = Date.now,
+  loadIndex, remoteSearch, enrichImages = async (results) => results.map((item) => item.images), now = Date.now,
 }: {
   loadIndex: () => Promise<ReturnType<typeof createAiTagIndex>>;
   remoteSearch: (query: string, limit: number, signal: AbortSignal) => Promise<DanbooruSearchResponse>;
+  /** Best-effort inline example images for the leading results. */
+  enrichImages?: (results: readonly AiTagResult[], count: number, signal: AbortSignal) => Promise<(DanbooruImageSizes | null)[]>;
   now?: () => number;
 }) {
   const cache = new Map<string, { expiresAt: number; results: AiTagResult[] }>();
@@ -111,7 +120,15 @@ export function createAiTagSearch({
   let attempts = 0;
   return async (input: AiSearchInput, signal: AbortSignal): Promise<AiSearchResult> => {
     signal.throwIfAborted();
-    if (input.source === "local") return (await loadIndex())(input);
+    const decorate = async (results: AiTagResult[]) => {
+      if (input.images <= 0 || results.length === 0) return results;
+      const sizes = await enrichImages(results, input.images, signal);
+      return results.map((result, index) => ({ ...result, images: sizes[index] ?? null }));
+    };
+    if (input.source === "local") {
+      const page = (await loadIndex())(input);
+      return { ...page, results: await decorate(page.results) };
+    }
     const key = JSON.stringify([input.query.toLowerCase(), input.limit]);
     const saved = cache.get(key);
     let results = saved && now() < saved.expiresAt ? saved.results : undefined;
@@ -129,7 +146,7 @@ export function createAiTagSearch({
             id: item.tag, tag: normalizePromptTagName(item.tag), zh: item.cn_name,
             aliases: item.alias_from ? [item.alias_from] : [],
             category: item.category, category_name: item.category, group: "",
-            note: item.wiki || null, match: "semantic",
+            note: item.wiki || null, match: "semantic", images: null,
           }));
           if (cache.size >= 100) cache.delete(cache.keys().next().value!);
           cache.set(key, { results: rows, expiresAt: now() + AI_REMOTE_CACHE_TTL });
@@ -140,6 +157,6 @@ export function createAiTagSearch({
       results = await job;
     }
     signal.throwIfAborted();
-    return { ...input, total: results.length, has_more: false, results };
+    return { ...input, total: results.length, has_more: false, results: await decorate(results) };
   };
 }

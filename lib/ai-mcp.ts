@@ -2,7 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { buildAiGuide, buildAiSkill } from "../app/lib/ai-documents";
-import { AiSearchError, parseAiSearchInput, type AiSearchInput, type AiSearchResult } from "./ai-tag-search";
+import { AI_SEARCH_LIMIT, AiSearchError, parseAiSearchInput, type AiSearchInput, type AiSearchResult } from "./ai-tag-search";
+import { AI_TAG_IMAGE_DEFAULT } from "./ai-tag-images";
 import { aiRequestOrigin } from "./ai-document-response";
 import { readAiJson } from "./ai-http";
 
@@ -13,6 +14,7 @@ export function createAiMcpServer(origin: string, search: Search, signal: AbortS
   const query = z.string().trim().min(1).max(300);
   const limit = z.number().int().min(1).max(50).default(20);
   const direction = z.enum(["auto", "tag-to-zh", "zh-to-tag"]).default("auto");
+  const images = z.number().int().min(0).max(AI_SEARCH_LIMIT).default(AI_TAG_IMAGE_DEFAULT);
   async function run(input: Record<string, unknown>) {
     try {
       const result = await search(parseAiSearchInput(input), signal);
@@ -24,14 +26,14 @@ export function createAiMcpServer(origin: string, search: Search, signal: AbortS
   }
   server.registerTool("search_tags", {
     title: "中英文 Tags 互查",
-    description: "Search the local general-audience dictionary by English tag, Chinese meaning or alias. Exact matches first. No database query or remote quota.",
-    inputSchema: z.object({ query, direction, limit, offset: z.number().int().min(0).max(10_000).default(0) }).strict(),
+    description: "Search the local general-audience dictionary by English tag, Chinese meaning or alias. Exact matches first. The leading results embed official Danbooru example image sizes. No database query or private quota.",
+    inputSchema: z.object({ query, direction, limit, offset: z.number().int().min(0).max(10_000).default(0), images }).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, (input) => run({ ...input, source: "local" }));
   server.registerTool("search_danbooru_tags", {
     title: "Danbooru 公共语义搜索",
     description: "Explicit remote semantic search using anonymous shared quota only, never a private key. Successes cached for one day. May be rate limited; prefer local search.",
-    inputSchema: z.object({ query, limit }).strict(),
+    inputSchema: z.object({ query, limit, images }).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }, (input) => run({ ...input, source: "danbooru" }));
   server.registerResource("tag-search-guide", `${origin}/llm.md`, {

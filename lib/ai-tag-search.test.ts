@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { CatalogResponse } from "../app/lib/catalog-types";
 import { danbooruFixture } from "../app/lib/danbooru-fixtures.test";
 import { handleAiTagSearch } from "./ai-http";
+import { AI_TAG_IMAGE_DEFAULT } from "./ai-tag-images";
 import {
   AI_REMOTE_CACHE_TTL, createAiTagIndex, createAiTagSearch, parseAiSearchInput,
 } from "./ai-tag-search";
@@ -45,10 +46,13 @@ describe("read-only AI tag lookup", () => {
     expect(local("hidden_tag").results).toEqual([]);
   });
   test("strictly bounds input and rejects unexpected remote controls", () => {
+    expect(parseAiSearchInput({ query: "x" }).images).toBe(AI_TAG_IMAGE_DEFAULT);
     for (const input of [
       null, {}, { query: "" }, { query: "{}" }, { query: "x".repeat(301) },
       { query: "x", limit: 0 }, { query: "x", limit: 51 }, { query: "x", limit: "2" },
       { query: "x", limit: 1.5 }, { query: "x", offset: -1 },
+      { query: "x", images: -1 }, { query: "x", images: 51 }, { query: "x", images: 1.5 },
+      { query: "x", images: "2" }, { query: "x", images: true },
       { query: "x", source: "danbooru", offset: 1 }, { query: "x", apiKey: "secret" },
       { query: "x", direction: ["auto"] }, { query: "x", source: ["local"] },
       { query: "x", url: "https://evil.test" }, { query: "x", show_nsfw: true },
@@ -70,12 +74,43 @@ describe("read-only AI tag lookup", () => {
   test("HTTP query validation rejects duplicates, malformed numbers and unknown keys", async () => {
     let calls = 0;
     const search = async () => { calls++; return local("御坂"); };
-    for (const query of ["query=x&query=y", "query=x&limit=1e2", "query=x&limit=", "query=x&url=https://evil.test", "query=x&offset=-1", "query=x&limit=1.5"]) {
+    for (const query of ["query=x&query=y", "query=x&limit=1e2", "query=x&limit=", "query=x&url=https://evil.test", "query=x&offset=-1", "query=x&limit=1.5", "query=x&images=1e2", "query=x&images=-1", "query=x&images=1.5"]) {
       const response = await handleAiTagSearch(new Request(`https://site.test/api/ai/tags?${query}`), search);
       expect(response.status).toBe(400);
       expect(response.headers.get("cache-control")).toBe("no-store");
     }
     expect(calls).toBe(0);
+  });
+  test("inlines example images for the leading results and honours images=0", async () => {
+    const asked: string[] = [];
+    const search = createAiTagSearch({
+      loadIndex: async () => index, remoteSearch: async () => remoteData,
+      enrichImages: async (results, count) => results.map((result, position) => {
+        if (position >= count) return null;
+        asked.push(result.tag);
+        return {
+          preview: `https://cdn.donmai.us/180x180/${position}.jpg`,
+          sample: `https://cdn.donmai.us/sample/${position}.jpg`,
+          original: null,
+        };
+      }),
+    });
+    const enriched = await search(parseAiSearchInput({ query: "御坂", limit: 2, images: 1 }), new AbortController().signal);
+    expect(enriched.images).toBe(1);
+    expect(enriched.results[0].images).toMatchObject({
+      preview: "https://cdn.donmai.us/180x180/0.jpg", sample: "https://cdn.donmai.us/sample/0.jpg", original: null,
+    });
+    expect(enriched.results[1].images).toBeNull();
+    expect(asked).toEqual([enriched.results[0].tag]);
+
+    let calls = 0;
+    const off = createAiTagSearch({
+      loadIndex: async () => index, remoteSearch: async () => remoteData,
+      enrichImages: async (results) => { calls++; return results.map(() => null); },
+    });
+    const plain = await off(parseAiSearchInput({ query: "御坂", images: 0 }), new AbortController().signal);
+    expect(calls).toBe(0);
+    expect(plain.results.every((result) => result.images === null)).toBe(true);
   });
 });
 

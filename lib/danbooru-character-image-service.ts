@@ -1,37 +1,31 @@
 import {
   CHARACTER_IMAGE_BLOCKED_TAGS,
   CHARACTER_IMAGE_CACHE_MAX_ENTRIES,
+  CHARACTER_IMAGE_CACHE_TTL,
   isBlockedCharacterImageTag,
   isCharacterImageUrl,
-  isFreshCharacterImage,
-  resolveCharacterImageTag,
+  isDanbooruImageSizes,
+  resolveValidCharacterImageTag,
   type CharacterImageResponse,
+  type DanbooruImageSizes,
 } from "../app/lib/character-image-types";
 import { characterImageFetcher } from "./danbooru-character-image-fetch";
 
 type CachedImage = {
   cachedAt: number;
-  imageUrl: string | null;
+  sizes: DanbooruImageSizes | null;
+};
+type ResolvedImage = {
+  tag: string;
+  sizes: DanbooruImageSizes | null;
+  cached: boolean;
+  cachedAt: number;
 };
 type CharacterImageOptions = {
   fetcher?: typeof fetch;
   now?: () => number;
   timeoutMs?: number;
 };
-
-const MAX_TAG_LENGTH = 200;
-function validTag(value: string) {
-  const tag = resolveCharacterImageTag(value);
-  return (
-    tag.length > 0 &&
-    tag.length <= MAX_TAG_LENGTH &&
-    !/[\u0000-\u001f\u007f]/.test(tag) &&
-    !/[,:*]/.test(tag) &&
-    !/^[-~]/.test(tag)
-  )
-    ? tag
-    : null;
-}
 
 /** Danbooru's `-tag` operator makes the API itself skip blocked characters, so
  * a still-valid example image is preferred over an empty result. */
@@ -49,16 +43,39 @@ function hasBlockedCharacterTag(post: Record<string, unknown>) {
   });
 }
 
-function imageUrlFromPost(value: unknown) {
+/** One general-rating post becomes up to three official Danbooru sizes. */
+function imageSizesFromPost(value: unknown): DanbooruImageSizes | null {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return null;
   const post = value as Record<string, unknown>;
   if (post.rating !== "g") return null;
   if (hasBlockedCharacterTag(post)) return null;
-  for (const key of ["preview_file_url", "large_file_url", "file_url"]) {
-    if (isCharacterImageUrl(post[key])) return post[key];
-  }
-  return null;
+  const pick = (key: string) => (isCharacterImageUrl(post[key]) ? post[key] : null);
+  const sizes: DanbooruImageSizes = {
+    preview: pick("preview_file_url"),
+    sample: pick("large_file_url"),
+    original: pick("file_url"),
+  };
+  return sizes.preview || sizes.sample || sizes.original ? sizes : null;
+}
+
+/** Preview first, then the ≤850px sample, then the original: the single-URL
+ * order the tag cards relied on before multiple sizes were exposed. */
+function preferredImageUrl(sizes: DanbooruImageSizes | null) {
+  return sizes ? sizes.preview ?? sizes.sample ?? sizes.original : null;
+}
+
+function isFreshCachedImage(
+  record: CachedImage | undefined,
+  now: number,
+): record is CachedImage {
+  return (
+    !!record &&
+    Number.isFinite(record.cachedAt) &&
+    record.cachedAt <= now &&
+    now < record.cachedAt + CHARACTER_IMAGE_CACHE_TTL &&
+    (record.sizes === null || isDanbooruImageSizes(record.sizes))
+  );
 }
 
 export function createCharacterImageService({
@@ -71,22 +88,22 @@ export function createCharacterImageService({
   const cache = new Map<string, CachedImage>();
   const pending = new Map<
     string,
-    { id: symbol; refresh: boolean; promise: Promise<CharacterImageResponse> }
+    { id: symbol; refresh: boolean; promise: Promise<ResolvedImage> }
   >();
 
-  async function load(
+  async function resolveSizes(
     rawTag: string,
     requestSignal?: AbortSignal,
     { refresh = false }: { refresh?: boolean } = {},
-  ): Promise<CharacterImageResponse> {
-    const tag = validTag(rawTag);
+  ): Promise<ResolvedImage> {
+    const tag = resolveValidCharacterImageTag(rawTag);
     if (!tag) throw new Error("标签格式无效。");
     const existing = pending.get(tag);
     if (existing && (!refresh || existing.refresh)) return existing.promise;
     const currentTime = now();
     const remembered = cache.get(tag);
-    if (!refresh && isFreshCharacterImage(remembered, currentTime)) {
-      return { tag, ...remembered, cached: true };
+    if (!refresh && isFreshCachedImage(remembered, currentTime)) {
+      return { tag, sizes: remembered.sizes, cached: true, cachedAt: remembered.cachedAt };
     }
     const id = Symbol(tag);
     const promise = (async () => {
@@ -121,11 +138,11 @@ export function createCharacterImageService({
       const posts: unknown = await response.json();
       if (!Array.isArray(posts))
         throw new Error("Danbooru 图片服务返回的数据格式不正确。");
-      const imageUrl = imageUrlFromPost(posts[0]);
-      const result = { tag, imageUrl, cachedAt: now(), cached: false };
+      const sizes = imageSizesFromPost(posts[0]);
+      const result: ResolvedImage = { tag, sizes, cachedAt: now(), cached: false };
       // A refresh can supersede an older request still awaiting Danbooru.
       if (pending.get(tag)?.id === id) {
-        cache.set(tag, { cachedAt: result.cachedAt, imageUrl });
+        cache.set(tag, { cachedAt: result.cachedAt, sizes });
         if (cache.size > CHARACTER_IMAGE_CACHE_MAX_ENTRIES)
           cache.delete(cache.keys().next().value!);
       }
@@ -137,10 +154,33 @@ export function createCharacterImageService({
     return promise;
   }
 
-  return { load };
+  async function load(
+    rawTag: string,
+    requestSignal?: AbortSignal,
+    options?: { refresh?: boolean },
+  ): Promise<CharacterImageResponse> {
+    const { tag, sizes, cached, cachedAt } = await resolveSizes(
+      rawTag,
+      requestSignal,
+      options,
+    );
+    return { tag, imageUrl: preferredImageUrl(sizes), cached, cachedAt };
+  }
+
+  /** Multi-size lookup for the AI search path; the cache is shared with load. */
+  async function loadSizes(
+    rawTag: string,
+  ): Promise<{ tag: string; sizes: DanbooruImageSizes | null; cached: boolean }> {
+    const { tag, sizes, cached } = await resolveSizes(rawTag);
+    return { tag, sizes, cached };
+  }
+
+  return { load, loadSizes };
 }
 
-const characterImageService = createCharacterImageService();
+// Shared between the same-site tag-card route and the AI tag search, so both
+// reuse one weekly cache, blocked-tag filter and server-side proxy.
+export const characterImageService = createCharacterImageService();
 
 function errorResponse(message: string, status: number) {
   return Response.json(
@@ -164,7 +204,8 @@ export async function handleCharacterImage(
     return errorResponse("此接口仅接受本站发起的请求。", 403);
   const params = new URL(request.url).searchParams;
   const tag = params.get("tag") ?? "";
-  if (!validTag(tag)) return errorResponse("请输入有效的标签。", 400);
+  if (!resolveValidCharacterImageTag(tag))
+    return errorResponse("请输入有效的标签。", 400);
   try {
     const result = await (options.service ?? characterImageService).load(
       tag,

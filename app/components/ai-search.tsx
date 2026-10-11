@@ -72,8 +72,8 @@ export default function AiSearch() {
       </div>
       <dl className="ai-endpoints">
         <div>
-          <dt>Tags API</dt>
-          <dd><a href="/api/ai/tags?query=misaka_mikoto">{origin}/api/ai/tags</a></dd>
+          <dt>Tags API（内联例图）</dt>
+          <dd><a href="/api/ai/tags?query=misaka_mikoto&images=8">{origin}/api/ai/tags</a></dd>
         </div>
         <div>
           <dt>MCP</dt>

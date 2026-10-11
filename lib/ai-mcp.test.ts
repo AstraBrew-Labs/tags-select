@@ -2,11 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { handleAiMcp } from "./ai-mcp";
+import { AI_TAG_IMAGE_DEFAULT } from "./ai-tag-images";
 import type { AiSearchInput } from "./ai-tag-search";
 
 const search = async (input: AiSearchInput) => ({
   ...input, total: 1, has_more: false,
-  results: [{ id: "test", tag: "misaka_mikoto", zh: "御坂美琴", aliases: [], category: "characters", category_name: "角色", group: "某科学", note: null, match: "exact" as const }],
+  results: [{ id: "test", tag: "misaka_mikoto", zh: "御坂美琴", aliases: [], category: "characters", category_name: "角色", group: "某科学", note: null, match: "exact" as const, images: null }],
 });
 const request = (body: unknown, headers: Record<string, string> = {}) => new Request("http://localhost:3107/api/ai/mcp", {
   method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers },
@@ -27,11 +28,14 @@ describe("real read-only MCP protocol", () => {
       const { tools } = await client.listTools();
       expect(tools.map((tool) => tool.name)).toEqual(["search_tags", "search_danbooru_tags"]);
       for (const tool of tools) expect(tool.annotations?.readOnlyHint).toBe(true);
-      const local = await client.callTool({ name: "search_tags", arguments: { query: "御坂美琴" } });
+      const local = await client.callTool({ name: "search_tags", arguments: { query: "御坂美琴", images: 0 } });
       expect(local.isError).not.toBe(true);
-      expect(local.structuredContent).toMatchObject({ source: "local" });
+      expect(local.structuredContent).toMatchObject({ source: "local", images: 0 });
       await client.callTool({ name: "search_danbooru_tags", arguments: { query: "白色水手服" } });
       expect(calls.map((input) => input.source)).toEqual(["local", "danbooru"]);
+      // Inline images default on and can be switched off per call.
+      expect(calls[0].images).toBe(0);
+      expect(calls[1].images).toBe(AI_TAG_IMAGE_DEFAULT);
       const { resources } = await client.listResources();
       expect(resources).toHaveLength(2);
       const resource = await client.readResource({ uri: resources[0].uri });

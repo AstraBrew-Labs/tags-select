@@ -26,12 +26,31 @@ describe("portable AI documents and download URLs", () => {
       }
     }
   });
-  test("OpenAPI advertises only a read-only endpoint with bounded search parameters", () => {
+  test("OpenAPI advertises only the read-only search endpoint with bounded parameters and inline images", () => {
     const spec = buildAiOpenApi("https://api.test");
     expect(spec.servers).toEqual([{ url: "https://api.test" }]);
+    expect(Object.keys(spec.paths)).toEqual(["/api/ai/tags"]);
     expect(Object.keys(spec.paths["/api/ai/tags"])).toEqual(["get"]);
     expect(spec.paths["/api/ai/tags"].get.security).toEqual([]);
     expect(spec.paths["/api/ai/tags"].get.parameters.find((item) => item.name === "limit")?.schema.maximum).toBe(50);
+    const imagesParameter = spec.paths["/api/ai/tags"].get.parameters.find((item) => item.name === "images");
+    expect(imagesParameter?.schema).toMatchObject({ minimum: 0, maximum: 50, default: 8 });
+    const result = spec.paths["/api/ai/tags"].get.responses["200"].content["application/json"].schema.properties.results.items;
+    expect(result.required).toContain("images");
+    expect(Object.keys(result.properties.images.properties)).toEqual(["preview", "sample", "original"]);
+    expect(spec.info.version).toBe("1.1.0");
+    const example = spec.paths["/api/ai/tags"].get.responses["200"].content["application/json"].example;
+    expect(example).toMatchObject({ images: 8, source: "local" });
+    expect(Object.keys(example.results[0].images)).toEqual(["preview", "sample", "original"]);
+  });
+  test("documents the inline example images and offers no separate image endpoint", () => {
+    for (const document of [buildAiDocument("markdown", "https://api.test"), buildAiDocument("text", "https://api.test"), buildAiSkill("https://api.test")]) {
+      expect(document).toContain("images");
+      expect(document).toContain("preview");
+      expect(document).toContain("sample");
+      expect(document).not.toContain("/api/ai/images");
+      expect(document).not.toContain("get_tag_image");
+    }
   });
   test("portable repository skill is generated from the same maintained source", async () => {
     const content = await readFile("skills/novelai-tags-search/SKILL.md", "utf8");

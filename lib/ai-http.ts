@@ -17,7 +17,7 @@ export async function handleAiTagSearch(
       throw new AiSearchError("搜索参数不能重复。", 400);
     }
     const input = parseAiSearchInput(Object.fromEntries([...params].map(([key, value]) => [
-      key, ["limit", "offset"].includes(key) && /^\d+$/.test(value) ? Number(value) : value,
+      key, ["limit", "offset", "images"].includes(key) && /^\d+$/.test(value) ? Number(value) : value,
     ])));
     const data = await search(input, request.signal);
     return Response.json(data, {
